@@ -927,6 +927,16 @@ function sortByProximity(points) {
 
 // Functions for render data
 
+function emptyAll() {
+    searchInput.value = '';
+    cardsContainer.textContent = '';
+    const dataListSelector = document.getElementById('data-list');
+    dataListSelector.textContent = '';
+    dataListSelector.value = '';
+    const switchEmbSelector = document.getElementById('switch-spaces');
+    switchEmbSelector.textContent = '';
+    switchEmbSelector.value = '';
+}
 
 function emptyCanvas() {
     ctx.fillStyle = PAGE_BACKGROUND;
@@ -1689,16 +1699,13 @@ document.body.addEventListener('dragleave', onDragleave);
 
 // Start do things
 
+emptyAll();
 if (ISLOCAL) {
-    const dataListSelector = document.getElementById('data-list');
-    dataListSelector.textContent = '';
-    dataListSelector.value = '';
     addNotify('🏠 Local mode', 8000);
     console.log('🏠 Local mode\nℹ️ Index loading was skipped because the page was opened from a file');
     document.getElementById('toggle-advanced-settings')?.click();
 } else {
     const dataListSelector = document.getElementById('data-list');
-    dataListSelector.textContent = '';
     fetch(INDEX_URL).then(response => response.json()).then(index => {
         index.forEach(item => INDEX.push(item));
         let selectItemIndex = 0;
