@@ -21,6 +21,11 @@ If you want to support the creator of the original maps, here is their profile o
    2. Drag the map onto the `.html` file you downloaded in the first step to view it in the browser.  
 3. Done
 
+## ⚠ Important
+
+The file `v0-artists-8192` is too big (132MB) for GitHub (<100MB), so it was uploaded separately to Google Drive: [`v0-artists-8192`](https://drive.usercontent.google.com/download?id=1S3P8qu8fByQ1XMa6afyDW46oxxaa6_a1)
+If you want to use this file, download it and drag it to the viewing page.
+
 ## Demo
 
 TODO Insert video here
