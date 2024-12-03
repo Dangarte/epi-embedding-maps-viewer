@@ -9,7 +9,7 @@ If you want to support the creator of the original maps, here is their profile o
 
 ## How to use?
 
-1. Open the page at the link [TODO Insert link here](TODO_Insert_link_here)
+1. Open the page at the link [epi-embedding-maps-viewer](https://dangarte.github.io/epi-embedding-maps-viewer/)
 2. Select a map
 3. Done
 
