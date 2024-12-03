@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html color-scheme="dark" lang="en">
+    <head>
+        <meta charset="UTF-8"/>
+        <meta name="color-scheme" content="dark"/>
+        <title>Embedding Map Viewer</title>
+        <meta name="google" content="notranslate">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+        <meta name="author" content="Dangart"/>
+        <meta name="description" content="Tag Embedding Map Viewer"/>
+        <link rel="icon" type="image/png" sizes="any" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABAAQMAAACQp+OdAAAABlBMVEUAAAD///+l2Z/dAAAAAXRSTlMAQObYZgAAAAFiS0dEAIgFHUgAAAAHdElNRQfoCxATKwPgE+Q7AAAAkklEQVQoz42RvRGAIAxG41lQOgKjOFoczVEYgZKC4zNIjKeeSo7iJeQ/RH0yrgouKEyxA5KCf4c5v0NR4AOAGwzAcgVXuLXoCyfN1xKNyB51Do8krxoQJ4jJAUGUQKItkikKSAhfQb/Eed2dLZzmmjDvJVIrQaxFzzassWfPz7nOkW0JH4v6WK+doOdedlw7959sOBF80xTKS+oAAAAASUVORK5CYII=">
+        <link rel="stylesheet" href="style.css" type="text/css">
+    </head>
+    <body>
+        <canvas id="image-canvas"></canvas>
+        <div id="image-cards"></div>
+    
+        <div id="notify">
+            <ul id="notify-list"></ul>
+        </div>
+        
+        <div id="controls" class="controls-group">
+            <div class="control-item">
+                <input id="search" placeholder="🔎 Search" autocomplete="off">
+                <button id="search-clear" class="control-btn" style="visibility: hidden;">x</button>
+                <button id="goto-search" class="control-btn" data-next="0" data-count="0">▶</button>
+            </div>
+            <div class="control-item" disabled>
+                <label for="data-list">Select embedding</label>
+                <select id="data-list" class="control-btn">
+                </select> 
+            </div>
+            <div class="control-item" disabled>
+                <label for="switch-spaces">Switch spaces</label>
+                <select id="switch-spaces" class="control-btn">
+                </select>
+            </div>
+            <div class="control-item">
+                <button id="recenter-view" class="control-btn">🌀 Recenter view</button>
+                <button id="overlap-fix" class="control-btn">🀄️ Overlap fix</button>
+                <button id="random" class="control-btn">🎲 Random</button>
+            </div>
+            <div class="control-separator"></div>
+            <button id="toggle-advanced-settings" class="control-btn" data-toggle-text="⚙️ Show advanced settings|⚙️ Hide advanced settings">⚙️ Show advanced settings</button>
+            <div id="advanced-settings-group" class="controls-group hidden">
+                <div class="control-item">
+                    <label for="scale-factor-coef">📏 Scale Coefficient</label>
+                    <input id="scale-factor-coef" type="range"  step="1" min="30" max="80">
+                </div>
+                <!-- <div class="control-separator"></div> -->
+                <button id="upload-json" class="control-btn"><p>📄 Drag & Drop <code>.json</code> file with embedding map</p><input id="upload-json-input" type="file" accept="application/json" style="display: none;"></button>
+            </div>
+        </div>
+
+        <div id="drop-box">
+            <h1>Drop <code>.json</code> file here...</h1>
+        </div>
+
+        <div id="stats">
+            <div id="cards-in-viewport">...</div>
+        </div>
+
+        <svg id="svg-symbols" style="display: none;" xmlns="http://www.w3.org/2000/svg">
+            <g>
+                <symbol id="icon-copy" class="icon" viewBox="0 0 24 24">
+                    <path d="M5,6V20a1,1,0,0,0,1,1H16"></path>
+                    <polygon points="19 6 19 17 9 17 9 3 16 3 19 6"></polygon>
+                </symbol>
+                <symbol id="icon-book" class="icon" viewBox="0 0 24 24">
+                    <rect x="4" y="3" width="17" height="18" rx="1"></rect>
+                    <path d="M5,8H3m2,4H3m2,4H3M17,7H9v4h8Z"></path>
+                </symbol>
+            </g>
+        </svg>
+        <div style="display: none;">
+            <svg class="icon" data-icon="copy"><use href="#icon-copy"></use></svg>
+            <svg class="icon" data-icon="book"><use href="#icon-book"></use></svg>
+        </div>
+
+
+        <script src="init.js"></script>
+    </body>
+</html>
