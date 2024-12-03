@@ -48,8 +48,8 @@ const SCALE_SEARCH = 1; // Zoom when moving to search element
 const SCALE_ZOOM_INTENSITY = .18; // Zoom Intensity
 
 // Index of sources
-const HOST = 'https://dangarte.github.io/epi-embedding-maps-viewer';
-const INDEX_URL = `${HOST}/data/index.json`;
+const HOST = 'https://github.com/Dangarte/epi-embedding-maps-viewer';
+const INDEX_URL = `${HOST}/data/_index.json`;
 const INDEX = [];
 
 // Define canvas
@@ -716,7 +716,7 @@ async function fetchData(id) {
     // TODO Checking the format (are all the required fields present)
 
     INDEX[id].data = newData;
-    return json;
+    return newData;
 }
 
 async function importJsonFile(file) {
