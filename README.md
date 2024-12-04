@@ -26,7 +26,8 @@ Last update: **`4.12.24`**
 
 ## ⚠ Important
 
-1. The file `v0-artists-8192` is too big (132MB) for GitHub (<100MB), so it was uploaded separately to Google Drive: [v0-artists-8192.json](https://drive.usercontent.google.com/download?id=1S3P8qu8fByQ1XMa6afyDW46oxxaa6_a1)
+1. The file `v0-artists-8192.json` is too big (132MB) for GitHub (<100MB), so it was uploaded separately to Google Drive: [v0-artists-8192.json](https://drive.usercontent.google.com/download?id=1S3P8qu8fByQ1XMa6afyDW46oxxaa6_a1)
+   - This is the original version, in the index there is a version with pictures converted to webp (63 quality) to compress the file to the 100 MB limit.
    - If you want to use this file, download it and drag it to the viewing page.
 
 ## Demo

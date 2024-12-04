@@ -25,8 +25,8 @@ const CARD_STYLE = {
     padding: 6,
     borderRadius: 10,
     textLines: 2,
-    lineHeight: 1.2,
-    matchedColor: 'red',
+    lineHeight: 1.3,
+    matchedColor: '#ff272f',
 };
 
 // Optimization
@@ -34,17 +34,19 @@ const CANVAS_SMOOTHING = true; // anti-aliasing
 const CANVAS_SMOOTHING_QUALITY = 'low'; // quality of anti-aliasing: low, medium, high
 const CANVAS_TEXT_QUALITY = 'optimizeLegibility'; // canvas textRendering option: optimizeSpeed, optimizeLegibility, geometricPrecigion
 const CANVAS_WEBGL = false; // Use webgl context instead of 2d // TODO
+// Perhaps it makes sense to redesign the preview system from "at a certain size" to "at a certain number on the screen"
 const CARD_PREVIEW_SCALING = [ // List of aviable preview scales (Sorted by scale, lower first)
-    { id: 'micro', title: 'Micro preview', scale: .019, quality: .6 },
-    { id: 'tiny', title: 'Tiny preview', scale: .054, quality: .8 },
-    { id: 'small', title: 'Small preview', scale: .21, quality: .95 },
-    { id: 'preview', title: 'Preview', scale: .44, quality: 1 }, // Recommended set quality to 1 at first preview (because it's more noticeable if it's of lower quality)
+    { id: 'micro', title: 'Micro preview', scale: .018, quality: .65 },
+    { id: 'tiny', title: 'Tiny preview', scale: .06, quality: .8 },
+    { id: 'small', title: 'Small preview', scale: .18, quality: .95 },
+    { id: 'preview', title: 'Preview', scale: .4, quality: 1 }, // Recommended set quality to 1 at first preview (because it's more noticeable if it's of lower quality)
     // id - Internal size identifier (Must be unique)
     // title - Size name, needed to display in status
     // scale - Size at which to move to the next quality
     // quality - Preview Quality (Internal size multiplier)
 ];
 const CARD_SCALE_PREVIEW = CARD_PREVIEW_SCALING.at(-1).scale; // At this scale elements changed to preview canvas (set to 0 for disable)
+const CARD_MATCHED_RECT_INSTEAD_IMAGE_AT = 3; // Draw rectangle instead of matched image if it is smaller than this (in px)
 const SORT_SEARCH_BY_PROXIMITY = true; // Sort search results by distance. That is, when going to a result, go to the nearest card, instead of the standard order.
 const CONVERT_PREVIEW_CANVAS_TO_IMAGE = false; // Convert preview canvas to image (not recommended, it takes a long time to convert, then it takes a long time to "decode image", but use less VRAM (if GPU acceleration is enabled) and fix OOM browser errors)
 
@@ -52,7 +54,7 @@ const CONVERT_PREVIEW_CANVAS_TO_IMAGE = false; // Convert preview canvas to imag
 const SCALE_BASE = .6; // Default Zoom
 const SCALE_MAX = 6; // Maximum zoom
 const SCALE_MIN = .004; // Minimum zoom
-const SCALE_SEARCH = 1; // Zoom when moving to search element
+const SCALE_SEARCH = .6; // Zoom when moving to search element
 const SCALE_ZOOM_INTENSITY = .18; // Zoom Intensity
 
 // Panning
@@ -970,11 +972,12 @@ function recalcRenderScale() {
     const scaledH = h * scale;
     const scaledW2 = scaledW / 2;
     const scaledH2 = scaledH / 2;
-    
+
     const wHalf = w / 2;
     const hHalf = h / 2;
-    
+
     let mathcedOutlineImage = STATE.renderedScaleCache?.mathcedOutlineImage;
+    let drawOnlyMatchedOutline = false;
     const outlineWidth = 2;
     const borderRadius = CARD_STYLE.borderRadius * scale;
 
@@ -1012,7 +1015,7 @@ function recalcRenderScale() {
         }
 
         // Draw outline for matched cards
-        
+
         if (mathcedOutlineImage) {
             mathcedOutlineImage.width = 0;
             mathcedOutlineImage.height = 0;
@@ -1025,11 +1028,11 @@ function recalcRenderScale() {
         mathcedOutlineCtx.lineWidth = outlineWidth;
         mathcedOutlineCtx.translate(outlineWidth, outlineWidth);
         mathcedOutlineCtx.stroke(getRoundedRectPath(scaledW, scaledH, borderRadius));
-
+        drawOnlyMatchedOutline = scaledW < CARD_MATCHED_RECT_INSTEAD_IMAGE_AT;
     }
 
     STATE.renderedScale = scale;
-    STATE.renderedScaleCache = { w, h, wHalf, hHalf, scaledW, scaledH, scaledW2, scaledH2, previewWidth, previewHeight, mathcedOutlineImage, outlineWidth };
+    STATE.renderedScaleCache = { w, h, wHalf, hHalf, scaledW, scaledH, scaledW2, scaledH2, previewWidth, previewHeight, mathcedOutlineImage, outlineWidth, drawOnlyMatchedOutline };
     STATE.cardScale = useElements ? 'Element' : previewScaleCurrent.title;
 }
 
@@ -1092,10 +1095,10 @@ function render() {
     const isScaleChanged = STATE.renderedScale !== scale;
 
     if (isScaleChanged) recalcRenderScale();
-    const { wHalf, hHalf, scaledW2, scaledH2, scaledW, scaledH, previewWidth, previewHeight, mathcedOutlineImage, outlineWidth } = STATE.renderedScaleCache;
-    
+    const { wHalf, hHalf, scaledW2, scaledH2, scaledW, scaledH, previewWidth, previewHeight, mathcedOutlineImage, outlineWidth, drawOnlyMatchedOutline } = STATE.renderedScaleCache;
+
     let visibleCardsCount = 0;
-    
+
     const useElements = scale > CARD_SCALE_PREVIEW;
 
     const viewportXStart = -panX - scaledW2;
@@ -1105,23 +1108,26 @@ function render() {
 
     const elementOffsetX = panX - wHalf;
     const elementOffsetY = panY - hHalf;
-    
-    
+
+
     // Apply scale and offset to canvas
     if (!useElements) {
         ctx.save();
         emptyCanvas();
         ctx.translate(panX - scaledW2, panY - scaledH2);
     }
-    
+
     const drawItem = (d, isMatched) => {
         const { scaledX, scaledY } = d;
         if (scaledX < viewportXStart || scaledX > viewportXEnd || scaledY < viewportYStart || scaledY > viewportYEnd) return;
         visibleCardsCount++;
 
         const { x: pointX, y: pointY, canvas } = d.previewInfo;
-        ctx.drawImage(canvas, pointX, pointY, previewWidth, previewHeight, scaledX, scaledY, scaledW, scaledH);
-        if (isMatched) ctx.drawImage(mathcedOutlineImage, scaledX - outlineWidth, scaledY - outlineWidth);
+        if (isMatched) {
+            // TODO Get rid of the empty space inside the matching outline if draw only the outline
+            if (!drawOnlyMatchedOutline) ctx.drawImage(canvas, pointX, pointY, previewWidth, previewHeight, scaledX, scaledY, scaledW, scaledH);
+            ctx.drawImage(mathcedOutlineImage, scaledX - outlineWidth, scaledY - outlineWidth);
+        } else ctx.drawImage(canvas, pointX, pointY, previewWidth, previewHeight, scaledX, scaledY, scaledW, scaledH);
     };
     const moveElement = (d, isMatched) => {
         const { scaledX, scaledY } = d;

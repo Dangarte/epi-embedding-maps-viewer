@@ -30,10 +30,17 @@
         "url": "https://dangarte.github.io/epi-embedding-maps-viewer/data/v1-hair-styles.json"
     },
     {
-        "id": "v0-artiss-2048",
+        "id": "v0-artists-2048",
         "title": "[OLD] Artists Tags (2048)",
         "changed": "2024-12-02T16:55:00Z",
-        "url": "https://dangarte.github.io/epi-embedding-maps-viewer/data/v0-artiss-2048.json"
+        "url": "https://dangarte.github.io/epi-embedding-maps-viewer/data/v0-artists-2048.json"
+    },
+    {
+        "id": "v0-artists-8192-webp-63",
+        "title": "[OLD] Artists Tags (8192)",
+        "description": "This is a version with images converted to webp (63 quality) to compress the file to the 100 MB limit",
+        "changed": "2024-12-04T15:00:00Z",
+        "url": "https://dangarte.github.io/epi-embedding-maps-viewer/data/v0-artists-8192-webp-63.json"
     },
     {
         "id": "v0-artis-style",
