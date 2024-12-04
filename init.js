@@ -1,6 +1,14 @@
-const ISDARK = window.matchMedia('(prefers-color-scheme: dark)').matches;
-const ISLOCAL = window.location?.href?.startsWith('file:///') ?? true;
+// Version info
+const VERSION = '4.12.24';
+
+// Online info
+const HOST = 'https://dangarte.github.io/epi-embedding-maps-viewer';
+const INDEX_URL = `${HOST}/data/index.json`;
+const ISLOCAL = !window.location?.href?.startsWith(HOST);
 const SELECTED_DATA_FROM_URL = !ISLOCAL ? 'v1-tags-1024' : null; // TODO
+
+// Preferences
+const ISDARK = window.matchMedia('(prefers-color-scheme: dark)').matches;
 
 // Display options
 const PAGE_BACKGROUND = ISDARK ? '#000' : '#eee';
@@ -47,8 +55,13 @@ const SCALE_MIN = .004; // Minimum zoom
 const SCALE_SEARCH = 1; // Zoom when moving to search element
 const SCALE_ZOOM_INTENSITY = .18; // Zoom Intensity
 
+// Panning
+const PANNING_INERTIA_FRICTION = .95; // Friction force when applying inertia after panning (Less - faster stop)
+const PANNING_INERTIA_TOUCH = true; // Apply inertia on touches
+const PANNING_INERTIA_MOUSE = false; // Apply inertia on mouse
+// TODO Panning Boundaries (Avoid Useless Huge Panning)
+
 // Index of sources
-const INDEX_URL = 'https://dangarte.github.io/epi-embedding-maps-viewer/data/index.json';
 const INDEX = [];
 
 // Define canvas
@@ -95,8 +108,12 @@ const STATE = {
     panY: 0,
     mouseX: 0,
     mouseY: 0,
+    velocityX: 0,
+    velocityY: 0,
     mousedown: false,
     mousemove: false,
+    isZooming: false,
+    pinchDistance: null,
     filter: null,
     matched: [],
     notMatched: [],
@@ -538,12 +555,10 @@ class CardsPhysicController {
             if (iteration === forceScaleResetAt) forceScale = forceScaleResetTo;
             if (forceScale > forceScaleMin) forceScale -= forceScaleStep;
     
-            if (converged) {
-                if (iteration || !converged) addNotify(converged ? 'The overlap has been fixed' : 'Failed to fix overlap, please try again');
-                break;
-            }
+            if (converged) break;
         }
-
+        
+        addNotify(converged ? 'The overlap has been fixed' : 'Failed to fix overlap, please try again');
         this.isActive = false;
     }
 
@@ -1073,7 +1088,6 @@ function renderToogleCardElementMatch(cardElement, matched) {
 
 function render() {
     if (!STATE.ready) return;
-    ctx.save();
     const { panX, panY, scale, data, filter } = STATE;
     const isScaleChanged = STATE.renderedScale !== scale;
 
@@ -1095,6 +1109,7 @@ function render() {
     
     // Apply scale and offset to canvas
     if (!useElements) {
+        ctx.save();
         emptyCanvas();
         ctx.translate(panX - scaledW2, panY - scaledH2);
     }
@@ -1136,7 +1151,7 @@ function render() {
         for (const d of data) renderItem(d, false);
     }
 
-    ctx.restore();
+    if (!useElements) ctx.restore();
 
     STATE.visibleCardsCount = visibleCardsCount;
     updateStatsOnPage();
@@ -1300,6 +1315,8 @@ async function switchEmb(embIndex, animate = true) {
     targets.forEach((d, index) => {
         d.newX = data[index].x;
         d.newY = data[index].y;
+        d.deltaX = d.newX - d.prevX;
+        d.deltaY = d.newY - d.prevY;
     });
 
     if (animate) {
@@ -1309,11 +1326,12 @@ async function switchEmb(embIndex, animate = true) {
 
         const step = async t => {
             const scale = STATE.scale;
+            const factor = smoothStepFactor(t);
     
             data.forEach((d, i) => {
-                const { newX, newY, prevX, prevY } = targets[i];
-                d.x = smoothStep(prevX, newX, t);
-                d.y = smoothStep(prevY, newY, t);
+                const { prevX, prevY, deltaX, deltaY } = targets[i];
+                d.x = prevX + factor * deltaX;
+                d.y = prevY + factor * deltaY;
                 d.scaledX = d.x * scale;
                 d.scaledY = d.y * scale;
             });
@@ -1351,15 +1369,18 @@ async function animatedPanTo(newPanX, newPanY, newScale = STATE.scale, duration 
     const prevScale = STATE.scale;
     const prevPanX = STATE.panX;
     const prevPanY = STATE.panY;
-    const isScaleChanged = prevScale !== newScale;
+    const deltaPanX = newPanX - prevPanX;
+    const deltaPanY = newPanY - prevPanY;
+    const deltaScale = newScale - prevScale;
     const timeStart = Date.now();
     const timeEnd = timeStart + duration;
     let timeNow = Date.now();
 
     const step = async t => {
-        STATE.panX = smoothStep(prevPanX, newPanX, t);
-        STATE.panY = smoothStep(prevPanY, newPanY, t);
-        if (isScaleChanged) STATE.scale = smoothStep(prevScale, newScale, t);
+        const factor = smoothStepFactor(t);
+        STATE.panX = prevPanX + factor * deltaPanX;
+        STATE.panY = prevPanY + factor * deltaPanY;
+        STATE.scale = prevScale + factor * deltaScale;
         
         await draw();
     };
@@ -1374,14 +1395,6 @@ async function animatedPanTo(newPanX, newPanY, newScale = STATE.scale, duration 
         if (timeNow > timeEnd) step(1);
     }
 }
-
-// Function to transform mouse coordinates to canvas coordinates
-function getTransformedMouseCoordinates(event) {
-    const mouseX = (event.clientX - STATE.panX) / STATE.scale;
-    const mouseY = (event.clientY - STATE.panY) / STATE.scale;
-    return { x: mouseX, y: mouseY };
-}
-
 
 // Activate imputs
 let spacingAnimationFrame = null;
@@ -1515,6 +1528,33 @@ function toClipboard(text) {
 //
 
 
+async function applyInertia() {
+    const MIN_VELOCITY = 0.2; // Minimum acceleration to apply
+
+    while (Math.abs(STATE.velocityX) > MIN_VELOCITY || Math.abs(STATE.velocityY) > MIN_VELOCITY) {
+        if (STATE.mousedown) break;
+        STATE.velocityX *= PANNING_INERTIA_FRICTION;
+        STATE.velocityY *= PANNING_INERTIA_FRICTION;
+
+        STATE.panX += STATE.velocityX;
+        STATE.panY += STATE.velocityY;
+        await draw();
+    }
+}
+
+function getPinchDistance(touch1, touch2) {
+    const dx = touch2.clientX - touch1.clientX;
+    const dy = touch2.clientY - touch1.clientY;
+    return Math.sqrt(dx * dx + dy * dy);
+}
+
+function getPinchCenter(touch1, touch2) {
+    return {
+        x: (touch1.clientX + touch2.clientX) / 2,
+        y: (touch1.clientY + touch2.clientY) / 2
+    };
+}
+
 function convertCanvasToImage(canvas) {
     return new Promise(r => {
         // const options = { type: 'image/png', quality: 1 };
@@ -1545,17 +1585,10 @@ function simpleAnimate(callback, steps) {
     });
 }
 
-// Smooth interpolation with ease-in-out curve
-function smoothStep(start, end, t) {
+function smoothStepFactor(t) {
     t = t < 0 ? 0 : t > 1 ? 1 : t // Clamp t to the range [0, 1]
     t = t * t * (3 - 2 * t); // Ease-in-out function
-    return start + t * (end - start);
-};
-
-// Linear interpolation
-function linearStep(start, end, t) {
-    t = t < 0 ? 0 : t > 1 ? 1 : t; // Clamp t to the range [0, 1]
-    return start + t * (end - start);
+    return t;
 }
 
 function fileToText(file) {
@@ -1592,21 +1625,32 @@ function insertElement(type, parent, attributes, text) {
 function onMousedown(e) {
     e.preventDefault();
     document.activeElement?.blur();
-    
-    STATE.mousedown = true;
-    STATE.mousemove = false;
-    STATE.mouseX = e.clientX;
-    STATE.mouseY = e.clientY;
+
+    if (e.button === 0 || e.touches) {
+        const { clientX, clientY } = e.touches?.[0] ?? e;
+        STATE.mousedown = true;
+        STATE.mousemove = false;
+        STATE.velocityX = 0;
+        STATE.velocityY = 0;
+        STATE.mouseX = clientX;
+        STATE.mouseY = clientY;
+    }
 }
 
 function onMousemove(e) {
-    const { clientX, clientY } = e;
+    const { clientX, clientY } = e.touches?.[0] ?? e;
     
     if (STATE.mousedown) {
         if (STATE.mouseX !== clientX || STATE.mouseY !== clientY) {
+            const deltaX = clientX - STATE.mouseX;
+            const deltaY = clientY - STATE.mouseY;
             STATE.mousemove = true;
-            STATE.panX += clientX - STATE.mouseX;
-            STATE.panY += clientY - STATE.mouseY;
+            STATE.panX += deltaX;
+            STATE.panY += deltaY;
+
+            STATE.velocityX = deltaX;
+            STATE.velocityY = deltaY;
+
             draw();
         }
     }
@@ -1615,13 +1659,73 @@ function onMousemove(e) {
 }
 
 function onMouseup(e) {
-    if (!STATE.mousemove && e.button === 0) {
-        const card = e.target.closest('.card');
-        if (card) onCardClick(e, card);
+    const isTouch = Boolean(e.touches);
+    if (!isTouch || !e.touches.length) {
+        if (!STATE.mousemove && !STATE.isZooming && (e.button === 0 || isTouch)) {
+            const card = e.target.closest('.card');
+            if (card) onCardClick(e, card);
+        }
+
+        STATE.mousedown = false;
+        
+        if (STATE.mousemove && ((isTouch && PANNING_INERTIA_TOUCH) || (!isTouch && PANNING_INERTIA_MOUSE))) applyInertia();
+        else {
+            STATE.velocityX = 0;
+            STATE.velocityY = 0;
+        }
+        
+        STATE.mousemove = false;
+        STATE.isZooming = false;
     }
-    
-    STATE.mousedown = false;
-    STATE.mousemove = false;
+
+    // Reset mousedown position to next active finger (Avoid jerking when moving after zooming)
+    if (isTouch && e.touches.length) {
+        const { clientX, clientY } = e.touches[0];
+        STATE.mouseX = clientX;
+        STATE.mouseY = clientY;
+    }
+
+    STATE.pinchDistance = null;
+}
+
+function onTouchstart(e) {
+    if (e.touches.length === 2) {
+        STATE.isZooming = true;
+        STATE.pinchDistance = getPinchDistance(e.touches[0], e.touches[1]);
+    }
+    onMousedown(e);
+}
+
+function onTouchmove(e) {
+    if (e.touches.length === 1) onMousemove(e);
+    else if (e.touches.length === 2) {
+        // Pinch to zoom
+        const newPinchDistance = getPinchDistance(e.touches[0], e.touches[1]);
+
+        if (STATE.pinchDistance !== newPinchDistance) {
+            if (!STATE.pinchDistance) STATE.pinchDistance = newPinchDistance;
+
+            const prevScale = STATE.scale;
+            const prevPanX = STATE.panX;
+            const prevPanY = STATE.panY;
+
+            const zoom = newPinchDistance / STATE.pinchDistance;
+            const newScale = Math.max(Math.min(prevScale * zoom, SCALE_MAX), SCALE_MIN);
+
+            if (prevScale === newScale) return;
+
+            const { x: centerX, y: centerY } = getPinchCenter(e.touches[0], e.touches[1]);
+
+            const newPanX = centerX - (centerX - prevPanX) * (newScale / prevScale);
+            const newPanY = centerY - (centerY - prevPanY) * (newScale / prevScale);
+
+            STATE.pinchDistance = newPinchDistance;
+            STATE.scale = newScale;
+            STATE.panX = newPanX;
+            STATE.panY = newPanY;
+            draw();
+        }
+    }
 }
 
 function onWheel(e) {
@@ -1640,12 +1744,11 @@ function onWheel(e) {
     
     const newPanX = mouseX - (mouseX - prevPanX) * (newScale / prevScale);
     const newPanY = mouseY - (mouseY - prevPanY) * (newScale / prevScale);
-
+    
     STATE.scale = newScale;
     STATE.panX = newPanX;
     STATE.panY = newPanY;
     draw();
-    return;
 }
 
 function onKeydown(e) {
@@ -1685,11 +1788,17 @@ function onDragleave(e) {
     document.body.classList.remove('hovering-drop', 'correct-drop', 'incorrect-drop');
 }
 
+cardsContainer.addEventListener('touchstart', onTouchstart);
+document.addEventListener('touchmove', onTouchmove, { passive: true });
+document.addEventListener('touchend', onMouseup);
+
 cardsContainer.addEventListener('mousedown', onMousedown);
 document.addEventListener('mousemove', onMousemove, { passive: true });
 document.addEventListener('mouseup', onMouseup);
+
 document.addEventListener('wheel', onWheel, { passive: true });
 document.addEventListener('keydown', onKeydown);
+
 document.body.addEventListener('dragover', e => e.preventDefault());
 document.body.addEventListener('drop', onDrop);
 document.body.addEventListener('dragenter', onDragenter);
@@ -1698,6 +1807,7 @@ document.body.addEventListener('dragleave', onDragleave);
 // Start do things
 
 emptyAll();
+statusElements.visibleCardsCount.textContent = `version ${VERSION}`;
 if (ISLOCAL) {
     addNotify('🏠 Local mode', 8000);
     console.log('🏠 Local mode\nℹ️ Index loading was skipped because the page was opened from a file');
