@@ -3,36 +3,42 @@
         "id": "v1-tags-1024",
         "title": "General Tags (1024)",
         "changed": "2024-11-21T09:46:00Z",
+        "type": "spaces",
         "url": "https://dangarte.github.io/epi-embedding-maps-viewer/data/v1-tags-1024.json"
     },
     {
         "id": "v1-tags-2048",
         "title": "General Tags (2048)",
         "changed": "2024-11-21T09:46:00Z",
+        "type": "spaces",
         "url": "https://dangarte.github.io/epi-embedding-maps-viewer/data/v1-tags-2048.json"
     },
     {
         "id": "v1-artists-1024",
         "title": "Artists Tags (1024)",
         "changed": "2024-11-21T09:46:00Z",
+        "type": "spaces",
         "url": "https://dangarte.github.io/epi-embedding-maps-viewer/data/v1-artists-1024.json"
     },
     {
         "id": "v1-chars-1024",
         "title": "Characters (1024)",
         "changed": "2024-11-21T09:46:00Z",
+        "type": "spaces",
         "url": "https://dangarte.github.io/epi-embedding-maps-viewer/data/v1-chars-1024.json"
     },
     {
         "id": "v1-hair-styles",
         "title": "Hair (1365)",
         "changed": "2024-11-21T09:46:00Z",
+        "type": "spaces",
         "url": "https://dangarte.github.io/epi-embedding-maps-viewer/data/v1-hair-styles.json"
     },
     {
         "id": "v0-artists-2048",
         "title": "[OLD] Artists Tags (2048)",
         "changed": "2024-12-02T16:55:00Z",
+        "type": "spaces",
         "url": "https://dangarte.github.io/epi-embedding-maps-viewer/data/v0-artists-2048.json"
     },
     {
@@ -40,30 +46,42 @@
         "title": "[OLD] Artists Tags (8192)",
         "description": "This is a version with images converted to webp (63 quality) to compress the file to the 100 MB limit",
         "changed": "2024-12-04T15:00:00Z",
+        "type": "spaces",
         "url": "https://dangarte.github.io/epi-embedding-maps-viewer/data/v0-artists-8192-webp-63.json"
     },
     {
         "id": "v0-artis-style",
         "title": "[OLD] artis-style",
         "changed": "2024-12-02T16:55:00Z",
+        "type": "spaces",
         "url": "https://dangarte.github.io/epi-embedding-maps-viewer/data/v0-artis-style.json"
     },
     {
         "id": "v0-chars-1024",
         "title": "[OLD] Characters (1024)",
         "changed": "2024-12-02T16:55:00Z",
+        "type": "spaces",
         "url": "https://dangarte.github.io/epi-embedding-maps-viewer/data/v0-chars-1024.json"
     },
     {
         "id": "v0-chars-1024-simplified",
         "title": "[OLD] Characters Simplified (1024)",
         "changed": "2024-12-02T16:55:00Z",
+        "type": "spaces",
         "url": "https://dangarte.github.io/epi-embedding-maps-viewer/data/v0-chars-1024-simplified.json"
     },
     {
         "id": "v0-hair-styles",
         "title": "[OLD] Hair (1365)",
         "changed": "2024-12-02T16:55:00Z",
+        "type": "spaces",
         "url": "https://dangarte.github.io/epi-embedding-maps-viewer/data/v0-hair-styles.json"
+    },
+    {
+        "id": "q5w959",
+        "title": "[Graph] LLM Based Prompt Inspo",
+        "changed": "2024-12-05T10:00:00Z",
+        "type": "graphs",
+        "url": "https://dangarte.github.io/epi-embedding-maps-viewer/data/graph-q5w959.json"
     }
 ]

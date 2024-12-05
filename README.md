@@ -7,7 +7,7 @@ The main reason for creating this page was the removal of old maps from threads 
 
 Creator of the original maps — [epiTune](https://civitai.com/user/epiTune).
 
-Last update: **`4.12.24`**
+Last update: **`5.12.24`**
 
 ## How to use?
 
@@ -50,6 +50,15 @@ TODO Insert video here
             <ul>
                 <li>Touchscreen support</li>
                 <li>Minor fixes and optimizations</li>
+            </ul>
+        </li>
+        <li>
+            <h4>Update <code>5.12.24</code></h4>
+            <ul>
+                <li>Preview cards now have different sizes depending on their content (previously all cards had a limit of 2 lines of text)</li>
+                <li>Because of the first point, the generation of preview images takes a little longer 😓</li>
+                <li>Fixed display of data processing status</li>
+                <li>Now you can drag and drop the graph json and it will be displayed (The dots will be in random places, without paths)</li>
             </ul>
         </li>
     </ul>

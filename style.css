@@ -90,7 +90,7 @@ input, select, a, button, code {
 #loading {
     position: fixed;
     z-index: 9999;
-    top: 1em;
+    top: 1.72em;
     font-size: 3em;
     user-select: none;
     pointer-events: none;
@@ -99,13 +99,12 @@ input, select, a, button, code {
     text-align: center;
     transform-origin: center;
     transform: translateX(-50%);
-    animation: loading 2s infinite ease-in-out;
+    animation: loading 1s infinite ease-in-out alternate;
 }
 
 @keyframes loading {
-    0% { transform: translateX(-50%) scale(1); }
-    50% { transform: translateX(-50%) scale(1.1); }
-    100% { transform: translateX(-50%) scale(1); }
+    0% { transform: translateX(-50%) scale(1) }
+    100% { transform: translateX(-50%) scale(1.1) }
 }
 
 #notify {
@@ -250,9 +249,22 @@ input[type="range"]::-webkit-slider-runnable-thumb {
     margin-top: -1em;
 }
 
+#graph-svg,
 #image-canvas {
     position: fixed;
     inset: 0;
+}
+
+#graph-svg {
+    fill: none;
+    stroke-width: calc(2px / var(--scale, 1));
+    stroke-linejoin: round;
+    stroke-linecap: round;
+    stroke: red;
+}
+
+#graph-svg > g {
+    transform: translate(var(--panX, 0), var(--panY, 0)) scale(var(--scale, 1));
 }
 
 #image-cards {
@@ -282,7 +294,8 @@ input[type="range"]::-webkit-slider-runnable-thumb {
     border-radius: var(--card-borderRadius);
     background-color: var(--card-backgroundColor);
     border: var(--card-borderWidth) solid var(--card-borderColor);
-    scale: var(--scale, 1);
+    transform-origin: top left;
+    transform: scale(var(--scale, 1));
     outline-offset: -1px;
     outline: 0 solid transparent;
     box-shadow: 0 4px 6px #0008;
@@ -385,6 +398,7 @@ input[type="range"]::-webkit-slider-runnable-thumb {
     display: inline;
 }
 
+body.loading #graph-svg,
 body.loading #image-canvas,
 body.loading #image-cards {
     pointer-events: none;
