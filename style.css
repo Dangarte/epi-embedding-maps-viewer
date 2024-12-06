@@ -256,15 +256,32 @@ input[type="range"]::-webkit-slider-runnable-thumb {
 }
 
 #graph-svg {
-    fill: none;
-    stroke-width: calc(2px / var(--scale, 1));
-    stroke-linejoin: round;
-    stroke-linecap: round;
-    stroke: red;
+    opacity: .5;
+    pointer-events: none;
+    user-select: none;
 }
 
 #graph-svg > g {
+    fill: none;
+    stroke-linejoin: round;
+    stroke-linecap: round;
+    stroke: currentColor;
+    stroke-width: max(calc(2px / var(--scale, 1)), 2px);
     transform: translate(var(--panX, 0), var(--panY, 0)) scale(var(--scale, 1));
+    stroke-dasharray: max(calc(12px / var(--scale, 1)), 24px);
+    animation: dashoffsetAnimation 1s infinite linear;
+}
+
+#graph-svg rect {
+    rx: var(--card-borderRadius);
+    ry: var(--card-borderRadius);
+    stroke-dasharray: 0 !important;
+    stroke-dashoffset: 0 !important;
+}
+
+@keyframes dashoffsetAnimation {
+    0% { stroke-dashoffset: 0; }
+    100% { stroke-dashoffset: min(calc(-24px / var(--scale, 1)), -48px); }
 }
 
 #image-cards {
@@ -308,6 +325,15 @@ input[type="range"]::-webkit-slider-runnable-thumb {
     outline: var(--outline-width) solid var(--card-matchedColor);
 }
 
+#image-cards .card .card-title {
+    user-select: text;
+    margin-top: var(--card-padding);
+}
+
+body.alt-active #image-cards .card .card-title {
+    cursor: text;
+}
+
 #image-cards .related-tag mark,
 #image-cards .card-title mark {
     color: currentColor;
@@ -340,6 +366,7 @@ input[type="range"]::-webkit-slider-runnable-thumb {
     align-items: center;
     justify-content: flex-end;
     gap: .125em;
+    margin-top: var(--card-padding);
     transition: .1s ease-in-out;
 }
 

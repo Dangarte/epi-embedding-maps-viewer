@@ -1,5 +1,5 @@
 // Version info
-const VERSION = '5.12.24'; // Last modified date
+const VERSION = '6.12.24'; // Last modified date
 
 // Online info
 const HOST = 'https://dangarte.github.io/epi-embedding-maps-viewer';
@@ -26,10 +26,6 @@ const CARD_STYLE = {
     borderRadius: 10,
     lineHeight: 1.3,
     matchedColor: '#ff272f',
-};
-const GRAPH_STTYLE = {
-    color: 'red',
-    width: 2
 };
 
 // Optimization
@@ -99,6 +95,7 @@ const STATE = {
     ready: false,
     source: {},
     data: [],
+    edges: null,
     previewControllers: {},
     space: 0,
     scale: SCALE_BASE,
@@ -113,18 +110,17 @@ const STATE = {
     velocityY: 0,
     mousedown: false,
     mousemove: false,
+    altKey: false,
     isZooming: false,
     pinchDistance: null,
     filter: null,
     matched: [],
     notMatched: [],
+    selectedGraph: -1,
 };
 
 
 // Controller classes
-// TODO: CardsPreviewController: Add sorting by global position of cards, in theory this will help to avoid accessing
-// too many images when zooming in and remove freezes from decoding this many huge images
-// (Makes sense for the mode when images are not stored as canvas)
 
 
 class CardsPreviewController {
@@ -311,6 +307,7 @@ class CardsPreviewController {
                 ctx.translate(x, y);
                 const imageWidth = Math.round(image.width * scale);
                 const imageHeight = Math.round(image.height * scale);
+                const textOffsetY = imageHeight + fontSize + padding;
 
                 if (cardTemplates[sizeKey]) {
                     ctx.drawImage(image, contentOffset, contentOffset, imageWidth, imageHeight);
@@ -337,7 +334,7 @@ class CardsPreviewController {
 
                 ctx.fillStyle = CARD_STYLE.color;
                 ctx.translate(contentOffset, contentOffset);
-                lines.forEach((line, i) => ctx.fillText(line, 0, imageHeight + fontSize + i * lineHeight));
+                lines.forEach((line, i) => ctx.fillText(line, 0, textOffsetY + i * lineHeight));
 
                 ctx.translate(-x - contentOffset, -y - contentOffset);
             }
@@ -396,6 +393,9 @@ class CardsPhysicController {
             p.gridY = gridY;
             p.gridCell = cell;
         });
+
+        this.gridSizeX = cellSizeX;
+        this.gridSizeY = cellSizeY;
     }
 
     async overlapFix() {
@@ -403,7 +403,7 @@ class CardsPhysicController {
         this.isActive = true;
         this.updatePoints();
         const spacing = STATE.spacing;
-        const isGraph = Boolean(STATE.source.edges);
+        const isGraph = Boolean(STATE.edges);
 
         const gap = 8; // Distance between cards
         const maxIterations = 80; // Maximum simulation steps
@@ -520,23 +520,30 @@ class CardsPhysicController {
             });
         };
 
-        let converged = false;
-        for(let iteration = 0; iteration < maxIterations; iteration++) {
+        let converged = false, iteration = 0;
+        for(iteration = 0; iteration < maxIterations; iteration++) {
             if (STATE.spacing !== spacing) break;
             
             updateGrid();
             converged = simulateRepulsionForces();
             syncPointsWithData();
-            await draw();
-            // if (isGraph) updateGraph();
+            if (!converged) {
+                await draw();
+                if (isGraph) updateGraph();
+            }
     
             if (iteration === forceScaleResetAt) forceScale = forceScaleResetTo;
             if (forceScale > forceScaleMin) forceScale -= forceScaleStep;
     
             if (converged) break;
         }
+
+        if (converged && iteration) {
+            await draw();
+            if (isGraph) updateGraph();
+        }
         
-        addNotify(converged ? 'The overlap has been fixed' : 'Failed to fix overlap, please try again');
+        if (iteration) addNotify(converged ? 'The overlap has been fixed' : 'Failed to fix overlap, please try again');
         this.isActive = false;
     }
 
@@ -590,6 +597,7 @@ async function selectData(id) {
     await setLoadingStatus('Unloading data');
     searchInput.value = '';
     STATE.filter = '';
+    STATE.edges = null;
     STATE.renderedScale = null;
     STATE.previewControllers = {};
     const keysToClear = [...CARD_PREVIEW_SCALING.map(i => i.id), 'cardElement', 'titleLowerCase', 'index', ];
@@ -628,7 +636,7 @@ async function selectData(id) {
     STATE.source.spaces.forEach((title, index) => insertElement('option', switchEmbList, { value: index }, title));
     switchEmbList.value = STATE.space;
 
-    await setLoadingStatus('Loading images');
+    await setLoadingStatus('Decoding images');
     await processImages(STATE.data);
 
     await setLoadingStatus('Calculating card sizes');
@@ -673,12 +681,13 @@ async function selectData(id) {
 
     // Set data info to edges
     if (data.edges) {
+        STATE.edges = data.edges;
         const nodes = STATE.data;
         const nodesMap = new Map();
         nodes.forEach(node => nodesMap.set(node.id, node));
-        data.edges.forEach(edge => {
+        STATE.edges.forEach(edge => {
             edge.nodeFrom = nodesMap.get(edge.from);
-            edge.nodeTo = nodesMap.get(edge.to);;
+            edge.nodeTo = nodesMap.get(edge.to);
         });
     }
 
@@ -690,7 +699,8 @@ async function selectData(id) {
     console.log(`${loaderPrefix} Loading %c${key}%c ready`, cCode, '');
     recenterView(false);
     
-    // if (data.edges) updateGraph();
+    STATE.selectedGraph = -1;
+    updateGraph();
 
     document.getElementById('data-list')?.parentElement?.removeAttribute('disabled');
 
@@ -706,8 +716,10 @@ function selectSpace(data, space) {
 
     // Select data
     data.forEach(d => {
-        d.x = d.spaces[space].x;
-        d.y = d.spaces[space].y;
+        const sp = d.spaces[space];
+        d.x = sp.x;
+        d.y = sp.y;
+        d.positionAbsolute = sp.positionAbsolute ?? false;
     });
 
     // Normalize data
@@ -724,6 +736,7 @@ function selectSpace(data, space) {
     const offsetY = (CANVAS_HEIGHT - rangeY * scaleFactor) / 2;
 
     data.forEach(d => {
+        if (d.positionAbsolute) return;
         d.x = (d.x - minX) * scaleFactor + offsetX;
         d.y = (d.y - minY) * scaleFactor + offsetY;
     });
@@ -736,7 +749,7 @@ function recalcCardSizes(data) {
     const image = data[0].image;
     const padding = CARD_STYLE.padding + CARD_STYLE.borderWidth;
     const additionalWidth = padding * 2;
-    const additionalHeight = padding * 2 + CARD_STYLE.fontSize;
+    const additionalHeight = padding * 4 + CARD_STYLE.fontSize; // padding * 2 + controls margin-top + text margin-top
     const lineHeight = CARD_STYLE.fontSize * CARD_STYLE.lineHeight;
 
     const measuringCanvas = new OffscreenCanvas(image.width, image.height);
@@ -857,6 +870,7 @@ async function switchEmb(embIndex, animate = true) {
             });
     
             await draw();
+            if (STATE.edges) updateGraph();
         };
         
         while (timeNow <= timeEnd) {
@@ -881,6 +895,7 @@ async function switchEmb(embIndex, animate = true) {
         });
         STATE.physics.updatePoints();
         await draw();
+        if (STATE.edges) updateGraph();
     }
 }
 
@@ -951,7 +966,7 @@ async function importJsonFile(file) {
         } catch (err) {
             console.error(err);
             loading.remove();
-            addNotify('❌ Import error', 4000);
+            addNotify('❌ Import error', 6000);
         }
     }
 
@@ -1114,15 +1129,95 @@ function convertOldDataToNewFormat(data, name) {
 }
 
 function convertGraphToNormal(data) {
-    console.log(data);
-    data.proj = data.nodes.map(node => ({ id: node.id, title: node.prompt, image: node.image, spaces: [{ x: Math.random() * CANVAS_WIDTH, y: Math.random() * CANVAS_HEIGHT }] }));
+    data.proj = data.nodes.map((node, i) => ({ id: node.id, title: node.prompt, index: i, image: node.image, edges: [], spaces: [] }));
     delete data.nodes;
-    data.spaces = ['Random'];
 
-    // TODO FCose Layout
-    // data.edges: [{ from, to }]
+    // Find node indices for a graph
+    const nodesMap = new Map();
+    const nodesTree = {};
+    data.proj.forEach(node => nodesMap.set(node.id, node));
+    data.edges.forEach((edge, i) => {
+        const nodeFrom = nodesMap.get(edge.from);
+        const nodeTo = nodesMap.get(edge.to);
+        if (!nodeFrom.edges.includes(i)) nodeFrom.edges.push(i);
+        if (!nodeTo.edges.includes(i)) nodeTo.edges.push(i);
+        edge.indexFrom = nodeFrom.index;
+        edge.indexTo = nodeTo.index;
+        if (nodesTree[edge.from]) nodesTree[edge.from].push({ id: edge.to });
+        else nodesTree[edge.from] = [{ id: edge.to }];
+    });
+
+    const hasParent = new Set();
+    Object.keys(nodesTree).forEach(branchId => {
+        const branches = nodesTree[branchId];
+        branches.forEach((branch, i) => {
+            if (!branch.branches && nodesTree[branch.id]) {
+                branch.branches = nodesTree[branch.id];
+                hasParent.add(branch.id);
+            }
+        });
+    });
+    Object.keys(nodesTree).forEach(branchId => {
+        if (hasParent.has(branchId)) delete nodesTree[branchId];
+    });
+
+    const treeLayout = layoutTree(nodesTree, data.edges.length);
+
+    // Create spaces
+    data.spaces = ['Tree', 'FCose Layout (placeholder)', 'Random'];
+    data.proj.forEach(node => {
+        // Tree
+        const treeSpace = treeLayout.get(node.id) ?? { x: 0, y: 0 };
+        node.spaces.push({ x: treeSpace.x, y: treeSpace.y, positionAbsolute: true });
+
+        // FCose Layout
+        node.spaces.push({ x: Math.random() * CANVAS_WIDTH, y: Math.random() * CANVAS_HEIGHT });
+        // TODO
+        // data.edges: [{ from, to }]
+
+        // Random
+        node.spaces.push({ x: Math.random() * CANVAS_WIDTH, y: Math.random() * CANVAS_HEIGHT });
+    });
 
     return data;
+
+    // TODO Clean up the function and optimize after
+
+    function layoutTree(nodesTree, nodesCount) {
+        const xGap = 500;
+        const yGap = 1000;
+        const lastRowHeight = Math.max(2, Math.ceil(nodesCount/200));
+        const nodePositions = new Map();
+        let currentX = 0;
+        let i = 0;
+    
+        function placeNode(branch, depth) {
+            const y = depth * yGap;
+    
+            if (branch.branches && branch.branches.length > 0) {
+                const childXPositions = branch.branches.map(child => placeNode(child, depth + 2));
+                const xMin = Math.min(...childXPositions);
+                const xMax = Math.max(...childXPositions);
+                const x = (xMin + xMax) / 2;
+                nodePositions.set(branch.id, { x, y });
+                return x;
+            } else {
+                i++;
+                const x = currentX;
+                nodePositions.set(branch.id, { x, y: y + (i%lastRowHeight) * yGap });
+                currentX += xGap;
+                return x;
+            }
+        }
+    
+        Object.keys(nodesTree).forEach(rootId => {
+            const rootBranches = nodesTree[rootId];
+            const rootNode = { id: rootId, branches: rootBranches };
+            placeNode(rootNode, 0);
+        });
+    
+        return nodePositions;
+    }
 }
 
 
@@ -1148,8 +1243,7 @@ function render() {
     const { panX, panY, scale, data, filter } = STATE;
     const isScaleChanged = STATE.renderedScale !== scale;
 
-    // document.body.style.setProperty('--panX', `${panX}px`);
-    // document.body.style.setProperty('--panY', `${panY}px`);
+    render_updateCSSProperty();
 
     if (isScaleChanged) render_recalcRenderScale();
     const { maxCardWidth, maxCardHeight, mathcedOutlineImages, outlineWidth, borderRadius, drawOnlyMatchedOutline } = STATE.renderedScaleCache;
@@ -1168,8 +1262,13 @@ function render() {
         cardsCanvasCtx.save();
         cardsCanvasCtx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
         cardsCanvasCtx.translate(panX, panY);
-        cardsCanvasCtx.strokeStyle = CARD_STYLE.matchedColor;
-        cardsCanvasCtx.lineWidth = outlineWidth;
+
+        if (drawOnlyMatchedOutline) {
+            cardsCanvasCtx.fillStyle = CARD_STYLE.matchedColor;
+        } else {
+            cardsCanvasCtx.strokeStyle = CARD_STYLE.matchedColor;
+            cardsCanvasCtx.lineWidth = outlineWidth;
+        }
     }
 
     const drawItem = (d, isMatched) => {
@@ -1184,9 +1283,8 @@ function render() {
             const outlineImage = mathcedOutlineImages.get(d.sizeKey);
             if (outlineImage) cardsCanvasCtx.drawImage(outlineImage, scaledX - outlineWidth, scaledY - outlineWidth);
             else {
-                cardsCanvasCtx.translate(scaledX, scaledY);
-                cardsCanvasCtx.stroke(getRoundedRectPath(scaledWidth, scaledHeight, borderRadius));
-                cardsCanvasCtx.translate(-scaledX, -scaledY);
+                // if (drawOnlyMatchedOutline) cardsCanvasCtx.fill(getRoundedRectPath(scaledWidth, scaledHeight, borderRadius, scaledX, scaledY));
+                cardsCanvasCtx.stroke(getRoundedRectPath(scaledWidth, scaledHeight, borderRadius, scaledX, scaledY));
             }
         } else cardsCanvasCtx.drawImage(canvas, pointX, pointY, previewWidth, previewHeight, scaledX, scaledY, scaledWidth, scaledHeight);
     };
@@ -1263,16 +1361,14 @@ function render_recalcRenderScale() {
         mathcedOutlineImages = null;
     };
 
-    // document.body.style.setProperty('--scale', scale);
+    render_updateCSSProperty();
 
     if (useElements) {
-        cardsContainer.setAttribute('style', `--scale: ${scale};`);
         if (!renderedElements) cardsCanvasCtx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
         emptyMatchedOutline();
     } else {
         // Remove all elements if they not nedeed
         if (renderedElements) {
-            cardsContainer.removeAttribute('style');
             cardsContainer.textContent = '';
             data.forEach(d => d.cardElement ? d.cardElement.inDOM = false : null);
         }
@@ -1289,6 +1385,7 @@ function render_recalcRenderScale() {
 
         // Draw outline for matched cards
         const OUTLINE_PREVIEW_MIN_COUNT = 150;
+        drawOnlyMatchedOutline = scaledW < CARD_MATCHED_RECT_INSTEAD_IMAGE_AT;
 
         emptyMatchedOutline();
         mathcedOutlineImages = new Map();
@@ -1298,18 +1395,20 @@ function render_recalcRenderScale() {
             const scaledW = Math.round(width * scale);
             const scaledH = Math.round(height * scale);
             const offscreenCanvas = new OffscreenCanvas(scaledW + outlineWidth * 2, scaledH + outlineWidth * 2);
-            
+
             mathcedOutlineImages.set(key, offscreenCanvas);
             const offscreenCtx = offscreenCanvas.getContext('2d', { alpha: true });
             offscreenCtx.imageSmoothingEnabled = CANVAS_SMOOTHING;
             offscreenCtx.imageSmoothingQuality = CANVAS_SMOOTHING_QUALITY;
+            offscreenCtx.translate(outlineWidth, outlineWidth);
             offscreenCtx.strokeStyle = CARD_STYLE.matchedColor;
             offscreenCtx.lineWidth = outlineWidth;
-            offscreenCtx.translate(outlineWidth, outlineWidth);
             offscreenCtx.stroke(getRoundedRectPath(scaledW, scaledH, borderRadius));
-
+            if (drawOnlyMatchedOutline) {
+                offscreenCtx.fillStyle = CARD_STYLE.matchedColor;
+                offscreenCtx.fill(getRoundedRectPath(scaledW, scaledH, borderRadius));
+            }
         });
-        drawOnlyMatchedOutline = scaledW < CARD_MATCHED_RECT_INSTEAD_IMAGE_AT;
     }
 
     STATE.renderedScale = scale;
@@ -1404,32 +1503,76 @@ function createCardElement(d) {
     return { element: card, titleElement: p, searchList };
 }
 
-function updateGraph() {
-    return;
+function updateGraph(node = null) {
     graphSVG.textContent = '';
-    const edges = STATE.source.edges;
 
-    const graphGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    const GRAPH_PADDING = 12;
+    STATE.selectedGraph = node ? node !== -1 ? node.index : -1 : STATE.selectedGraph;
 
-    edges.forEach(edge => {
-        const { x: x1, y: y1, width: w1 } = edge.nodeFrom;
-        const { x: x2, y: y2, width: w2 } = edge.nodeTo;
+    if (STATE.selectedGraph !== -1) {
+        const edges = STATE.edges;
+        const nodes = STATE.data;
+        const graphGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+        const connectedNodes = new Set();
 
-        const startX = x1 + w1 / 2;
-        const startY = y1;
-        const endX = x2 + w2 / 2;
-        const endY = y2;
+        nodes[STATE.selectedGraph].edges.forEach(edgeIndex => {
+            const { indexFrom, indexTo } = edges[edgeIndex];
+            const { x: x1, y: y1, width: w1, height: h1 } = nodes[indexFrom];
+            const { x: x2, y: y2, width: w2, height: h2 } = nodes[indexTo];
 
-        const controlX = (startX + endX) / 2;
-        const controlY = Math.min(startY, endY) + 100;
+            connectedNodes.add(indexFrom);
+            connectedNodes.add(indexTo);
 
-        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-        const d = `M ${startX},${startY} Q ${controlX},${controlY} ${endX},${endY}`; // Quadratic curve
-        path.setAttribute('d', d);
+            const startX = x1 + w1 / 2;
+            const startY = y1 + h1 + GRAPH_PADDING;
+            const endX = x2 + w2 / 2;
+            const endY = y2 - GRAPH_PADDING;
 
-        graphGroup.appendChild(path);
-    });
-    graphSVG.appendChild(graphGroup);
+            const controlX = (startX + endX) / 2;
+            const controlY = Math.min(startY, endY) + 100;
+
+            const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+            const d = `M ${startX},${startY} Q ${controlX},${controlY} ${endX},${endY}`; // Quadratic curve
+            path.setAttribute('d', d);
+
+            graphGroup.appendChild(path);
+        });
+
+        connectedNodes.forEach(index => {
+            const { x, y, width, height } = nodes[index];
+
+            const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+            rect.setAttribute('x', x - GRAPH_PADDING);
+            rect.setAttribute('y', y - GRAPH_PADDING);
+            rect.setAttribute('width', width + GRAPH_PADDING * 2);
+            rect.setAttribute('height', height + GRAPH_PADDING * 2);
+            graphGroup.appendChild(rect);
+        });
+
+        graphSVG.appendChild(graphGroup);
+    }
+}
+
+// CSS Property with scale, panX and panY
+const renderPropertyCache = {
+    scale: null,
+    panX: null,
+    panY: null
+}
+function render_updateCSSProperty() {
+    const { scale, panX, panY } = STATE;
+    if (renderPropertyCache.scale !== scale) {
+        document.body.style.setProperty('--scale', scale);
+        renderPropertyCache.scale = scale;
+    }
+    if (renderPropertyCache.panX !== panX) {
+        document.body.style.setProperty('--panX', `${panX}px`);
+        renderPropertyCache.panX = panX;
+    }
+    if (renderPropertyCache.panY !== panY) {
+        document.body.style.setProperty('--panY', `${panY}px`);
+        renderPropertyCache.panY = panY;
+    }
 }
 
 // Path for image rounded corners
@@ -1556,6 +1699,7 @@ const inputsInit = [
                 if (STATE.ready) {
                     selectSpace(STATE.data, STATE.space);
                     render();
+                    if (STATE.edges) updateGraph();
                 }
             });
         }
@@ -1726,7 +1870,7 @@ function getPinchCenter(touch1, touch2) {
 function convertCanvasToImage(canvas) {
     return new Promise(r => {
         // const options = { type: 'image/png', quality: 1 };
-        const options = { type: 'image/webp', quality: .72 };
+        const options = { type: 'image/jpeg', quality: .83 };
         canvas.convertToBlob(options).then(blob => {
             const image = new Image(canvas.width, canvas.height);
             const url = URL.createObjectURL(blob);
@@ -1790,40 +1934,57 @@ function toClipboard(text) {
     });
 }
 
+function clearSelection() {
+    const selection = window.getSelection?.() ?? {};
+    if (selection.empty) selection.empty();
+    else if (selection.removeAllRanges) selection.removeAllRanges();
+}
+
 
 // Events
 
 
-function onCardClick(e, card) {
-    const id = card.getAttribute('data-id');
-    if (!id) return;
-
+function onCardClick(e, id) {
     const d = STATE.data.find(d => d.id === id);
     if (!d) return;
 
-    const buttonId = e.target.closest('.button[data-id]')?.getAttribute('data-id');
+    const buttonId = e.target?.closest('.button[data-id]')?.getAttribute('data-id') ?? null;
     if (buttonId === 'wiki') {
         const wikiUrl = d.kv?.danbooru_wiki_url;
         if (wikiUrl) toClipboard(wikiUrl);
 
         return;
     }
+    if (buttonId === 'copy') {
+        const title = d.title;
+        if (title) toClipboard(title);
 
-    toClipboard(d.title);
+        return;
+    }
+
+    if (e.ctrlKey) return toClipboard(d.title);
+
+    if (STATE.edges && !e.altKey && d.index !== STATE.selectedGraph) updateGraph(d);
 }
 
 function onMousedown(e) {
-    e.preventDefault();
     document.activeElement?.blur();
 
     if (e.button === 0 || e.touches) {
-        const { clientX, clientY } = e.touches?.[0] ?? e;
-        STATE.mousedown = true;
-        STATE.mousemove = false;
-        STATE.velocityX = 0;
-        STATE.velocityY = 0;
-        STATE.mouseX = clientX;
-        STATE.mouseY = clientY;
+        // Ignore movement when clicking on text
+        if (!e.altKey || !e.target.closest('.card-title')) {
+            e.preventDefault();
+            const { clientX, clientY } = e.touches?.[0] ?? e;
+            STATE.mousedown = true;
+            STATE.mousemove = false;
+            STATE.velocityX = 0;
+            STATE.velocityY = 0;
+            STATE.mouseX = clientX;
+            STATE.mouseY = clientY;
+        }
+
+        // Remove text selection
+        clearSelection();
     }
 }
 
@@ -1843,6 +2004,12 @@ function onMousemove(e) {
 
             draw();
         }
+        if (STATE.altKey) document.body.classList.remove('alt-active');
+    } else {
+        if (STATE.altKey !== e.altKey) {
+            STATE.altKey = e.altKey;
+            document.body.classList.toggle('alt-active', e.altKey);
+        }
     }
     STATE.mouseX = clientX;
     STATE.mouseY = clientY;
@@ -1851,19 +2018,48 @@ function onMousemove(e) {
 function onMouseup(e) {
     const isTouch = Boolean(e.touches);
     if (!isTouch || !e.touches.length) {
-        if (!STATE.mousemove && !STATE.isZooming && (e.button === 0 || isTouch)) {
-            const card = e.target.closest('.card');
-            if (card) onCardClick(e, card);
+        if (STATE.ready && !STATE.mousemove && !STATE.isZooming && (e.button === 0 || isTouch) && e.target.closest('#image-cards')) {
+            const elementId = e.target.closest('.card')?.getAttribute('data-id') ?? null;
+            if (elementId !== null) onCardClick(e, elementId);
+            else {
+                let canvasCardIndex = null;
+                const { panX, panY, scale } = STATE;
+                const { clientX, clientY } = e.touches?.[0] ?? e;
+                const globalX = (clientX - panX) / scale;
+                const globalY = (clientY - panY) / scale;
+                const { data, grid, gridSizeX, gridSizeY } = STATE.physics;
+
+                const cells = [];
+                const cellX = Math.floor(globalX / gridSizeX);
+                const cellY = Math.floor(globalY / gridSizeY);
+                for(let dx = -1; dx <= 1; dx++) {
+                    for(let dy = -1; dy <= 1; dy++) {
+                        const cell = grid[cellX + dx]?.[cellY + dy];
+                        if (cell) cells.push(cell);
+                    }
+                }
+
+                cells.forEach(cell => {
+                    cell.list.forEach(i => {
+                        const { x, y, width, height } = data[i];
+                        if (x < globalX && y < globalY &&  x + width > globalX && y + height > globalY) canvasCardIndex = i;
+                    });
+                });
+                if (canvasCardIndex !== null) onCardClick(e, data[canvasCardIndex].id);
+                else {
+                    updateGraph(-1);
+                }
+            }
         }
 
         STATE.mousedown = false;
-        
+
         if (STATE.mousemove && ((isTouch && PANNING_INERTIA_TOUCH) || (!isTouch && PANNING_INERTIA_MOUSE))) applyInertia();
         else {
             STATE.velocityX = 0;
             STATE.velocityY = 0;
         }
-        
+
         STATE.mousemove = false;
         STATE.isZooming = false;
     }

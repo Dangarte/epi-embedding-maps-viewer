@@ -3,11 +3,11 @@
 ## This is just a small page to view [Epi's Embedding Maps](https://civitai.com/articles/8977)
 
 This is a simplified version of viewing **Epi's Embedding Maps**.  
-The main reason for creating this page was the removal of old maps from threads and the desire to have a less laggy interface for viewing these maps.  
+The main reason for creating this page was the removal of old maps from threads and the desire to have a less laggy interface for viewing these maps.
 
 Creator of the original maps — [epiTune](https://civitai.com/user/epiTune).
 
-Last update: **`5.12.24`**
+Last update: **`6.12.24`**
 
 ## How to use?
 
@@ -17,10 +17,10 @@ Last update: **`5.12.24`**
 
 ### 🏠 Offline mode
 
-1. Open the page as usual and press `Ctrl + S` to download it. The browser will handle what needs to be saved.  
-2. In offline mode, the map index loading is disabled (because of CORS), so you need to download the maps manually:  
-   1. Open the [`/data`](https://github.com/Dangarte/epi-embedding-maps-viewer/tree/main/data) folder in this repository and download any maps you need.  
-   2. Drag the map onto the `.html` file you downloaded in the first step to view it in the browser.  
+1. Open the page as usual and press `Ctrl + S` to download it. The browser will handle what needs to be saved.
+2. In offline mode, the map index loading is disabled (because of CORS), so you need to download the maps manually:
+   1. Open the [`/data`](https://github.com/Dangarte/epi-embedding-maps-viewer/tree/main/data) folder in this repository and download any maps you need.
+   2. Drag the map onto the `.html` file you downloaded in the first step to view it in the browser.
 3. Don't forget to redownload the viewing page after a new update is released.
 4. Done
 
@@ -32,13 +32,25 @@ Last update: **`5.12.24`**
 
 ## Demo
 
-TODO Insert video here
+### Spaces
+
+![image](https://dangarte.github.io/epi-embedding-maps-viewer/demo/spaces.png)
+In spaces you can:
+
+- Search and go to result
+- Select a random card
+- Switch between UMAP
+- Fix overlapping cards in 1 click
+
+![video](https://dangarte.github.io/epi-embedding-maps-viewer/demo/spaces.mp4)
 
 ## Keyboard shortcuts
 
-1. `Ctrl + F` — Focus on the search field  
-2. `Ctrl + Click` — Activate a button without animation, if possible  
-3. `Shift + Click` — Activate a button in reverse, if possible (e.g., a button to navigate to the previous search result)  
+1. `Ctrl + F` — Focus on the search field
+2. `Ctrl + Click` (controls) — Activate a button without animation, if possible
+3. `Ctrl + Click` (cards) — Copy title
+4. Holding `Alt` (cards) — Possibility to select text in the title
+5. `Shift + Click` — Activate a button in reverse, if possible (e.g., a button to navigate to the previous search result)
 
 ## Changelog
 
@@ -46,10 +58,12 @@ TODO Insert video here
     <summary>List of changes</summary>
     <ul>
         <li>
-            <h4>Update <code>4.12.24</code></h4>
+            <h4>Update <code>6.12.24</code></h4>
             <ul>
-                <li>Touchscreen support</li>
-                <li>Minor fixes and optimizations</li>
+                <li>Ability to select text on a card while holding <code>Alt</code></li>
+                <li>Now when you click on a card (not the copy button) the text is copied only when <code>Ctrl</code> is pressed</li>
+                <li>If you click on a graph card and it has connections, they will be displayed</li>
+                <li>Tree view of graph</li>
             </ul>
         </li>
         <li>
@@ -59,6 +73,13 @@ TODO Insert video here
                 <li>Because of the first point, the generation of preview images takes a little longer 😓</li>
                 <li>Fixed display of data processing status</li>
                 <li>Now you can drag and drop the graph json and it will be displayed (The dots will be in random places, without paths)</li>
+            </ul>
+        </li>
+        <li>
+            <h4>Update <code>4.12.24</code></h4>
+            <ul>
+                <li>Touchscreen support</li>
+                <li>Minor fixes and optimizations</li>
             </ul>
         </li>
     </ul>

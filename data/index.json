@@ -83,5 +83,12 @@
         "changed": "2024-12-05T10:00:00Z",
         "type": "graphs",
         "url": "https://dangarte.github.io/epi-embedding-maps-viewer/data/graph-q5w959.json"
+    },
+    {
+        "id": "ho82sz",
+        "title": "[Graph] Fantasy Prompt Tree (photoreal model)",
+        "changed": "2024-12-06T17:00:00Z",
+        "type": "graphs",
+        "url": "https://dangarte.github.io/epi-embedding-maps-viewer/data/graph-ho82sz.json"
     }
 ]
