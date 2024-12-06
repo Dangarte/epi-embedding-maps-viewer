@@ -34,7 +34,7 @@ Last update: **`6.12.24`**
 
 ### Spaces
 
-![image](https://dangarte.github.io/epi-embedding-maps-viewer/demo/spaces.png)
+![spaces.png](https://dangarte.github.io/epi-embedding-maps-viewer/demo/spaces.png)
 In spaces you can:
 
 - Search and go to result
@@ -42,7 +42,7 @@ In spaces you can:
 - Switch between UMAP
 - Fix overlapping cards in 1 click
 
-[![image](https://dangarte.github.io/epi-embedding-maps-viewer/demo/spaces.png)](https://dangarte.github.io/epi-embedding-maps-viewer/demo/spaces.webm)
+[spaces.webm](https://github.com/user-attachments/assets/a7b5a023-e682-4bbd-912d-3f177cc5c812)
 
 ## Keyboard shortcuts
 
