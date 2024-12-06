@@ -42,7 +42,7 @@ In spaces you can:
 - Switch between UMAP
 - Fix overlapping cards in 1 click
 
-![video](https://dangarte.github.io/epi-embedding-maps-viewer/demo/spaces.mp4)
+[![image](https://dangarte.github.io/epi-embedding-maps-viewer/demo/spaces.png)](https://dangarte.github.io/epi-embedding-maps-viewer/demo/spaces.webm)
 
 ## Keyboard shortcuts
 
