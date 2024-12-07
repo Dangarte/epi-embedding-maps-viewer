@@ -3,7 +3,7 @@
 ## This is just a small page to view [Epi's Embedding Maps](https://civitai.com/articles/8977)
 
 This is a simplified version of viewing **Epi's Embedding Maps**.  
-The main reason for creating this page was the removal of old maps from threads and the desire to have a less laggy interface for viewing these maps.
+The main reason for creating this page was the desire to have a less laggy interface for viewing these maps.
 
 Creator of the original maps — [epiTune](https://civitai.com/user/epiTune).
 
@@ -63,6 +63,8 @@ In spaces you can:
                 <li>Now when you click on a graph card, not only the connections of the current card are displayed, but also the entire path up the tree</li>
                 <li>Some bugs have been fixed</li>
                 <li><code>Ctrl + O</code> now opens the file selector for import</li>
+                <li>Cards may now not have an image, they will be displayed with a 256x256 placeholder</li>
+                <li>Added a limitation on file import: maximum size 512 MB, perhaps later, if necessary, this technical limitation will be corrected with improved handling of import of large files</li>
             </ul>
         </li>
         <li>

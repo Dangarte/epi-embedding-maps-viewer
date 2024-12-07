@@ -90,5 +90,12 @@
         "changed": "2024-12-06T17:00:00Z",
         "type": "graphs",
         "url": "https://dangarte.github.io/epi-embedding-maps-viewer/data/graph-ho82sz.json"
+    },
+    {
+        "id": "test-no-images-27982",
+        "title": "[TEST] [No images] Artists text UMAP",
+        "changed": "2024-12-06T20:00:00Z",
+        "type": "spaces",
+        "url": "https://dangarte.github.io/epi-embedding-maps-viewer/data/v00-test-no-images-27982.json"
     }
 ]

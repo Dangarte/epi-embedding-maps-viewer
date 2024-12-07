@@ -22,6 +22,7 @@ const CARD_STYLE = {
     btnBackgroundColor: ISDARK ? '#3b3d45' : '#e3e3e3',
     btnBackgroundColorHover: ISDARK ? '#525660' : '#c8e1ff',
     borderColor: ISDARK ? '#464953' : '#757a8a',
+    noImageBackground: '#2e4f6b',
     borderWidth: 1,
     padding: 6,
     borderRadius: 10,
@@ -246,7 +247,7 @@ class CardsPreviewController {
                 if (count < TEMPLATE_MIN_COUNT) return;
                 const scaledWidth = Math.round(width * scale);
                 const scaledHeight = Math.round(height * scale);
-                const image = this.data.find(item => item.sizeKey === key).image;
+                const image = this.data.find(item => item.sizeKey === key).image ?? { width: 256, height: 256 };
                 const imageWidth = Math.round(image.width * scale);
                 const imageHeight = Math.round(image.height * scale);
                 const cardTemplate = new OffscreenCanvas(scaledWidth, scaledHeight);
@@ -305,12 +306,16 @@ class CardsPreviewController {
                 refCardsCount--;
             } else {
                 ctx.translate(x, y);
-                const imageWidth = Math.round(image.width * scale);
-                const imageHeight = Math.round(image.height * scale);
+                const imageWidth = Math.round((image ? image.width : 256) * scale);
+                const imageHeight = Math.round((image ? image.height : 256) * scale);
                 const textOffsetY = imageHeight + fontSize + padding;
 
                 if (cardTemplates[sizeKey]) {
-                    ctx.drawImage(image, contentOffset, contentOffset, imageWidth, imageHeight);
+                    if (image) ctx.drawImage(image, contentOffset, contentOffset, imageWidth, imageHeight);
+                    else {
+                        ctx.fillStyle = CARD_STYLE.noImageBackground;
+                        ctx.fillRect(contentOffset, contentOffset, imageWidth, imageHeight);
+                    }
                     ctx.drawImage(cardTemplates[sizeKey], 0, 0);
                 } else {
                     ctx.save();
@@ -328,7 +333,11 @@ class CardsPreviewController {
                     if (borderWidth) ctx.stroke(getRoundedRectPath(imageWidth + borderWidthX2, imageHeight + borderWidthX2, borderRadiusInside, -borderWidth, -borderWidth));
 
                     ctx.clip(getRoundedRectPath(imageWidth, imageHeight, borderRadiusInside));
-                    ctx.drawImage(image, 0, 0, imageWidth, imageHeight);
+                    if (image) ctx.drawImage(image, 0, 0, imageWidth, imageHeight);
+                    else {
+                        ctx.fillStyle = CARD_STYLE.noImageBackground;
+                        ctx.fillRect(0, 0, imageWidth, imageHeight);
+                    }
                     ctx.restore();
                 }
 
@@ -748,7 +757,7 @@ function selectSpace(data, space) {
 }
 
 function recalcCardSizes(data) {
-    const image = data[0].image;
+    const image = data[0].image ?? { width: 256, height: 256 };
     const padding = CARD_STYLE.padding + CARD_STYLE.borderWidth;
     const additionalWidth = padding * 2;
     const additionalHeight = padding * 4 + CARD_STYLE.fontSize; // padding * 2 + controls margin-top + text margin-top
@@ -812,8 +821,8 @@ function recalcCardSizes(data) {
     };
 
     data.forEach(item => {
-        const { image, title } = item;
-        const { width: w, height: h } = image;
+        const { image = {}, title } = item;
+        const { width: w = 256, height: h = 256 } = image;
         const lines = prepareLines(title, w);
         item.lines = lines;
         item.width = Math.round(w + additionalWidth);
@@ -926,6 +935,17 @@ async function importJsonFile(file) {
 
     if (dataIndex === -1) {
         try {
+            // JS string limit: 1GiB. Files are encoded mostly in UTF-8, but when decoded into strings they become UTF-16,
+            // which is often x2 in size (1 byte per character vs. the minimum of 2 bytes per character).
+            // Therefore, the maximum file size is limited to 512 MB.
+            // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/String/length
+            //
+            // Naturally, this problem can be solved, for example, by parsing the file into parts and putting base64 images in separate lines,
+            // but... is it necessary? Who would like it if the browser started to consume so much memory?
+            //
+            // 536870912 - 512 mb
+            if (file.size > 536870912) throw new Error('File is too large (More than 512 MB)');
+
             const loading = document.getElementById('loading') ?? createElement('div', { id: 'loading' });
             loading.textContent = 'Importing';
             document.body.appendChild(loading);
@@ -965,9 +985,9 @@ async function importJsonFile(file) {
             dataListSelector.value = dataIndex;
         } catch (err) {
             console.error(err);
-            loading.remove();
+            document.getElementById('loading')?.remove();
             document.body.classList.remove('loading');
-            addNotify('❌ Import error', 6000);
+            addNotify(`❌ Import error: ${err}`, 6000);
         }
     }
 
@@ -1486,7 +1506,8 @@ function emptyAllInputs() {
 
 function createCardElement(d) {
     const card = createElement('div', { class: 'card', 'data-id': d.id });
-    card.appendChild(d.image);
+    if (d.image) card.appendChild(d.image);
+    else insertElement('div', card, { class: 'image-placeholder' }, 'no-image');
     const p = insertElement('p', card, { class: 'card-title' }, d.title);
     const controls = insertElement('div', card, { class: 'buttons' });
     
