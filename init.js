@@ -1,11 +1,11 @@
 // Version info
-const VERSION = '6.12.24'; // Last modified date
+const VERSION = '7.12.24'; // Last modified date
 
 // Online info
 const HOST = 'https://dangarte.github.io/epi-embedding-maps-viewer';
 const INDEX_URL = `${HOST}/data/index.json`;
 const ISLOCAL = !window.location?.href?.startsWith(HOST);
-const SELECTED_DATA_FROM_URL = !ISLOCAL ? 'v1-tags-1024' : null; // TODO
+const SELECTED_DATA_FROM_URL = !ISLOCAL ? new URLSearchParams(window.location.search).get('json-id') || null : null;
 
 // Preferences
 const ISDARK = window.matchMedia('(prefers-color-scheme: dark)').matches;
@@ -17,6 +17,7 @@ const CARD_STYLE = {
     font: "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif",
     // font: 'Arial, Helvetica, sans-serif',
     color: ISDARK ? '#dedfe2' : '#232529',
+    colorDim: ISDARK ? '#6d6f76' : '#9da3b2',
     backgroundColor: ISDARK ? '#232529' : '#dedfe2',
     btnBackgroundColor: ISDARK ? '#3b3d45' : '#e3e3e3',
     btnBackgroundColorHover: ISDARK ? '#525660' : '#c8e1ff',
@@ -60,7 +61,6 @@ const SCALE_ZOOM_INTENSITY = .18; // Zoom Intensity
 const PANNING_INERTIA_FRICTION = .95; // Friction force when applying inertia after panning (Less - faster stop)
 const PANNING_INERTIA_TOUCH = true; // Apply inertia on touches
 const PANNING_INERTIA_MOUSE = false; // Apply inertia on mouse
-// TODO Panning Boundaries (Avoid Useless Huge Panning)
 
 // Index of sources
 const INDEX = [];
@@ -714,12 +714,14 @@ function selectSpace(data, space) {
     const dataCountSpacingFactor = 1024;
     const maxDataSpacingFactor = 3;
 
+    const skipThisCards = new Set();
+
     // Select data
-    data.forEach(d => {
+    data.forEach((d, i) => {
         const sp = d.spaces[space];
         d.x = sp.x;
         d.y = sp.y;
-        d.positionAbsolute = sp.positionAbsolute ?? false;
+        if (sp.positionAbsolute) skipThisCards.add(i);
     });
 
     // Normalize data
@@ -735,8 +737,8 @@ function selectSpace(data, space) {
     const offsetX = (CANVAS_WIDTH - rangeX * scaleFactor) / 2;
     const offsetY = (CANVAS_HEIGHT - rangeY * scaleFactor) / 2;
 
-    data.forEach(d => {
-        if (d.positionAbsolute) return;
+    data.forEach((d, i) => {
+        if (skipThisCards.has(i)) return;
         d.x = (d.x - minX) * scaleFactor + offsetX;
         d.y = (d.y - minY) * scaleFactor + offsetY;
     });
@@ -943,8 +945,7 @@ async function importJsonFile(file) {
                 dataType = 'spaces';
                 const spacesCount = json.spaces.length;
                 if (json.proj.some(d => !d.title || !d.image || d.spaces.length < spacesCount)) {
-                    console.warn('Error, wrong file structure (wrong proj list)');
-                    return;
+                    throw new Error('Wrong file structure (wrong proj list)');
                 }
             } else if (json.name && Array.isArray(json.edges) && Array.isArray(json.nodes)) {
                 // graphs
@@ -952,8 +953,7 @@ async function importJsonFile(file) {
                 newData = convertGraphToNormal(json);
             }
             else {
-                console.warn('Error, wrong file structure');
-                return;
+                throw new Error('Wrong file structure');
             }
 
 
@@ -966,6 +966,7 @@ async function importJsonFile(file) {
         } catch (err) {
             console.error(err);
             loading.remove();
+            document.body.classList.remove('loading');
             addNotify('❌ Import error', 6000);
         }
     }
@@ -1171,9 +1172,8 @@ function convertGraphToNormal(data) {
         node.spaces.push({ x: treeSpace.x, y: treeSpace.y, positionAbsolute: true });
 
         // FCose Layout
-        node.spaces.push({ x: Math.random() * CANVAS_WIDTH, y: Math.random() * CANVAS_HEIGHT });
         // TODO
-        // data.edges: [{ from, to }]
+        node.spaces.push({ x: Math.random() * CANVAS_WIDTH, y: Math.random() * CANVAS_HEIGHT });
 
         // Random
         node.spaces.push({ x: Math.random() * CANVAS_WIDTH, y: Math.random() * CANVAS_HEIGHT });
@@ -1181,23 +1181,25 @@ function convertGraphToNormal(data) {
 
     return data;
 
-    // TODO Clean up the function and optimize after
-
     function layoutTree(nodesTree, nodesCount) {
         const xGap = 500;
         const yGap = 1000;
         const lastRowHeight = Math.max(2, Math.ceil(nodesCount/200));
+
         const nodePositions = new Map();
         let currentX = 0;
         let i = 0;
-    
+
         function placeNode(branch, depth) {
             const y = depth * yGap;
-    
+
             if (branch.branches && branch.branches.length > 0) {
                 const childXPositions = branch.branches.map(child => placeNode(child, depth + 2));
-                const xMin = Math.min(...childXPositions);
-                const xMax = Math.max(...childXPositions);
+                let xMin = Infinity, xMax = -Infinity;
+                for (const xPos of childXPositions) {
+                    if (xPos < xMin) xMin = xPos;
+                    if (xPos > xMax) xMax = xPos;
+                }
                 const x = (xMin + xMax) / 2;
                 nodePositions.set(branch.id, { x, y });
                 return x;
@@ -1209,13 +1211,12 @@ function convertGraphToNormal(data) {
                 return x;
             }
         }
-    
-        Object.keys(nodesTree).forEach(rootId => {
+
+        for (const rootId in nodesTree) {
             const rootBranches = nodesTree[rootId];
-            const rootNode = { id: rootId, branches: rootBranches };
-            placeNode(rootNode, 0);
-        });
-    
+            placeNode({ id: rootId, branches: rootBranches }, 0);
+        }
+
         return nodePositions;
     }
 }
@@ -1247,6 +1248,7 @@ function render() {
 
     if (isScaleChanged) render_recalcRenderScale();
     const { maxCardWidth, maxCardHeight, mathcedOutlineImages, outlineWidth, borderRadius, drawOnlyMatchedOutline } = STATE.renderedScaleCache;
+    const outlineWidthHalf = outlineWidth / 2;
 
     let visibleCardsCount = 0;
 
@@ -1263,12 +1265,9 @@ function render() {
         cardsCanvasCtx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
         cardsCanvasCtx.translate(panX, panY);
 
-        if (drawOnlyMatchedOutline) {
-            cardsCanvasCtx.fillStyle = CARD_STYLE.matchedColor;
-        } else {
-            cardsCanvasCtx.strokeStyle = CARD_STYLE.matchedColor;
-            cardsCanvasCtx.lineWidth = outlineWidth;
-        }
+        cardsCanvasCtx.fillStyle = CARD_STYLE.matchedColor;
+        cardsCanvasCtx.strokeStyle = CARD_STYLE.matchedColor;
+        cardsCanvasCtx.lineWidth = outlineWidth;
     }
 
     const drawItem = (d, isMatched) => {
@@ -1278,13 +1277,12 @@ function render() {
 
         const { x: pointX, y: pointY, width: previewWidth, height: previewHeight, canvas } = d.previewInfo;
         if (isMatched) {
-            // TODO Get rid of the empty space inside the matching outline if draw only the outline
             if (!drawOnlyMatchedOutline) cardsCanvasCtx.drawImage(canvas, pointX, pointY, previewWidth, previewHeight, scaledX, scaledY, scaledWidth, scaledHeight);
             const outlineImage = mathcedOutlineImages.get(d.sizeKey);
             if (outlineImage) cardsCanvasCtx.drawImage(outlineImage, scaledX - outlineWidth, scaledY - outlineWidth);
             else {
-                // if (drawOnlyMatchedOutline) cardsCanvasCtx.fill(getRoundedRectPath(scaledWidth, scaledHeight, borderRadius, scaledX, scaledY));
-                cardsCanvasCtx.stroke(getRoundedRectPath(scaledWidth, scaledHeight, borderRadius, scaledX, scaledY));
+                if (drawOnlyMatchedOutline) cardsCanvasCtx.fill(getRoundedRectPath(scaledWidth + outlineWidth, scaledHeight + outlineWidth, borderRadius, scaledX - outlineWidthHalf, scaledY - outlineWidthHalf));
+                else cardsCanvasCtx.stroke(getRoundedRectPath(scaledWidth, scaledHeight, borderRadius, scaledX, scaledY));
             }
         } else cardsCanvasCtx.drawImage(canvas, pointX, pointY, previewWidth, previewHeight, scaledX, scaledY, scaledWidth, scaledHeight);
     };
@@ -1507,15 +1505,32 @@ function updateGraph(node = null) {
     graphSVG.textContent = '';
 
     const GRAPH_PADDING = 12;
+    const GRAPH_CONTROL_Y = 100;
+    const GRAPH_PARENT_DISPLAY = 8;
+    const rectBorderRadius = CARD_STYLE.borderRadius ? CARD_STYLE.borderRadius + GRAPH_PADDING : 4;
+
     STATE.selectedGraph = node ? node !== -1 ? node.index : -1 : STATE.selectedGraph;
 
     if (STATE.selectedGraph !== -1) {
         const edges = STATE.edges;
         const nodes = STATE.data;
+        const selectedIndex = STATE.selectedGraph;
+        const selectedNode = nodes[selectedIndex];
         const graphGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
         const connectedNodes = new Set();
 
-        nodes[STATE.selectedGraph].edges.forEach(edgeIndex => {
+        const drawParentEdges = (parentNodeIndex, depth = 1) => {
+            if (depth > GRAPH_PARENT_DISPLAY) return;
+            const parentNode = nodes[parentNodeIndex];
+            parentNode.edges.forEach(edgeIndex => {
+                const { indexFrom, indexTo } = edges[edgeIndex];
+                if (indexTo === parentNodeIndex) {
+                    drawEdge(edgeIndex);
+                    drawParentEdges(indexFrom, depth + 1);
+                }
+            });
+        };
+        const drawEdge = (edgeIndex, nodeClass) => {
             const { indexFrom, indexTo } = edges[edgeIndex];
             const { x: x1, y: y1, width: w1, height: h1 } = nodes[indexFrom];
             const { x: x2, y: y2, width: w2, height: h2 } = nodes[indexTo];
@@ -1529,24 +1544,37 @@ function updateGraph(node = null) {
             const endY = y2 - GRAPH_PADDING;
 
             const controlX = (startX + endX) / 2;
-            const controlY = Math.min(startY, endY) + 100;
+            const controlY = Math.min(startY, endY) + GRAPH_CONTROL_Y;
 
             const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
             const d = `M ${startX},${startY} Q ${controlX},${controlY} ${endX},${endY}`; // Quadratic curve
             path.setAttribute('d', d);
+            if (nodeClass) path.setAttribute('class', nodeClass);
 
             graphGroup.appendChild(path);
-        });
-
-        connectedNodes.forEach(index => {
-            const { x, y, width, height } = nodes[index];
+        };
+        const drawRect = (nodeIndex, nodeClass) => {
+            const { x, y, width, height } = nodes[nodeIndex];
 
             const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
             rect.setAttribute('x', x - GRAPH_PADDING);
             rect.setAttribute('y', y - GRAPH_PADDING);
+            rect.setAttribute('rx', rectBorderRadius);
+            rect.setAttribute('ry', rectBorderRadius);
             rect.setAttribute('width', width + GRAPH_PADDING * 2);
             rect.setAttribute('height', height + GRAPH_PADDING * 2);
+            if (nodeClass) rect.setAttribute('class', nodeClass);
             graphGroup.appendChild(rect);
+        };
+
+        selectedNode.edges.forEach(edgeIndex => {
+            const { indexFrom } = edges[edgeIndex];
+            drawEdge(edgeIndex, selectedIndex === indexFrom ? 'graph-selected' : null);
+            if (indexFrom !== selectedIndex) drawParentEdges(indexFrom);
+        });
+        
+        connectedNodes.forEach(nodeIndex => {
+            drawRect(nodeIndex, nodeIndex === selectedIndex ? 'graph-selected' : null);
         });
 
         graphSVG.appendChild(graphGroup);
@@ -1990,7 +2018,7 @@ function onMousedown(e) {
 
 function onMousemove(e) {
     const { clientX, clientY } = e.touches?.[0] ?? e;
-    
+
     if (STATE.mousedown) {
         if (STATE.mouseX !== clientX || STATE.mouseY !== clientY) {
             const deltaX = clientX - STATE.mouseX;
@@ -2004,7 +2032,11 @@ function onMousemove(e) {
 
             draw();
         }
-        if (STATE.altKey) document.body.classList.remove('alt-active');
+
+        if (STATE.altKey) {
+            STATE.altKey = false;
+            document.body.classList.remove('alt-active');
+        }
     } else {
         if (STATE.altKey !== e.altKey) {
             STATE.altKey = e.altKey;
@@ -2127,10 +2159,10 @@ function onWheel(e) {
     const newScale = Math.max(Math.min(prevScale * zoom, SCALE_MAX), SCALE_MIN);
 
     if (prevScale === newScale) return;
-    
+
     const newPanX = mouseX - (mouseX - prevPanX) * (newScale / prevScale);
     const newPanY = mouseY - (mouseY - prevPanY) * (newScale / prevScale);
-    
+
     STATE.scale = newScale;
     STATE.panX = newPanX;
     STATE.panY = newPanY;
@@ -2142,6 +2174,12 @@ function onKeydown(e) {
     if (e.ctrlKey && e.code === 'KeyF') {
         e.preventDefault();
         searchInput.focus();
+    }
+
+    // Open json file via shortcut
+    if (e.ctrlKey && e.code === 'KeyO') {
+        e.preventDefault();
+        document.getElementById('upload-json-input').click();
     }
 }
 

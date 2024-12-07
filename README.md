@@ -7,7 +7,7 @@ The main reason for creating this page was the removal of old maps from threads 
 
 Creator of the original maps — [epiTune](https://civitai.com/user/epiTune).
 
-Last update: **`6.12.24`**
+Last update: **`7.12.24`**
 
 ## How to use?
 
@@ -57,6 +57,14 @@ In spaces you can:
 <details>
     <summary>List of changes</summary>
     <ul>
+        <li>
+            <h4>Update <code>7.12.24</code></h4>
+            <ul>
+                <li>Now when you click on a graph card, not only the connections of the current card are displayed, but also the entire path up the tree</li>
+                <li>Some bugs have been fixed</li>
+                <li><code>Ctrl + O</code> now opens the file selector for import</li>
+            </ul>
+        </li>
         <li>
             <h4>Update <code>6.12.24</code></h4>
             <ul>

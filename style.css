@@ -256,7 +256,6 @@ input[type="range"]::-webkit-slider-runnable-thumb {
 }
 
 #graph-svg {
-    opacity: .5;
     pointer-events: none;
     user-select: none;
 }
@@ -265,18 +264,20 @@ input[type="range"]::-webkit-slider-runnable-thumb {
     fill: none;
     stroke-linejoin: round;
     stroke-linecap: round;
-    stroke: currentColor;
+    stroke: var(--card-colorDim);
     stroke-width: max(calc(2px / var(--scale, 1)), 2px);
     transform: translate(var(--panX, 0), var(--panY, 0)) scale(var(--scale, 1));
     stroke-dasharray: max(calc(12px / var(--scale, 1)), 24px);
-    animation: dashoffsetAnimation 1s infinite linear;
+    animation: dashoffsetAnimation 1s .1s infinite linear;
 }
 
 #graph-svg rect {
-    rx: var(--card-borderRadius);
-    ry: var(--card-borderRadius);
     stroke-dasharray: 0 !important;
     stroke-dashoffset: 0 !important;
+}
+
+#graph-svg rect.graph-selected {
+    stroke: var(--card-color);
 }
 
 @keyframes dashoffsetAnimation {
