@@ -260,13 +260,13 @@ input[type="range"]::-webkit-slider-runnable-thumb {
     user-select: none;
 }
 
-#graph-svg > g {
+#graph-container {
+    transform-origin: left top;
     fill: none;
     stroke-linejoin: round;
     stroke-linecap: round;
     stroke: var(--card-colorDim);
     stroke-width: max(calc(2px / var(--scale, 1)), 2px);
-    transform: translate(var(--panX, 0), var(--panY, 0)) scale(var(--scale, 1));
     stroke-dasharray: max(calc(12px / var(--scale, 1)), 24px);
     animation: dashoffsetAnimation 1s .1s infinite linear;
 }
@@ -295,47 +295,48 @@ input[type="range"]::-webkit-slider-runnable-thumb {
     user-select: none;
     cursor: grab;
     --outline-width: calc(2px / var(--scale, 1));
+    contain: layout paint;
 }
 
 #image-cards:active {
     cursor: grabbing;
 }
 
-#image-cards .card {
+#cards-container {
+    transform-origin: top left;
+}
+
+.card {
     position: absolute;
     box-sizing: border-box;
     transition: all 0s, outline-color .2s ease-in-out;
-    left: 50%;
-    top: 50%;
     line-height: 0;
     padding: var(--card-padding);
     border-radius: var(--card-borderRadius);
     background-color: var(--card-backgroundColor);
     border: var(--card-borderWidth) solid var(--card-borderColor);
-    transform-origin: top left;
-    transform: scale(var(--scale, 1));
     outline-offset: -1px;
     outline: 0 solid transparent;
     box-shadow: 0 4px 6px #0008;
     z-index: 0;
 }
 
-#image-cards .card.card-matched {
+.card.card-matched {
     z-index: 1;
     outline-offset: calc(-1 * var(--card-borderWidth));
     outline: var(--outline-width) solid var(--card-matchedColor);
 }
 
-#image-cards .card .card-title {
+.card-title {
     user-select: text;
     margin-top: var(--card-padding);
 }
 
-body.alt-active #image-cards .card .card-title {
+body.alt-active .card-title {
     cursor: text;
 }
 
-#image-cards .card .image-placeholder {
+.image-placeholder {
     width: 256px;
     height: 256px;
     background-color: var(--card-noImageBackground);
@@ -344,8 +345,8 @@ body.alt-active #image-cards .card .card-title {
     align-items: center;
 }
 
-#image-cards .related-tag mark,
-#image-cards .card-title mark {
+.related-tag mark,
+.card-title mark {
     color: currentColor;
     background-color: color-mix(in oklab, var(--card-matchedColor), transparent 80%);
     box-shadow: inset 0 0 3px var(--card-matchedColor);
@@ -361,18 +362,18 @@ body.alt-active #image-cards .card .card-title {
     pointer-events: none;
 }
 
-#image-cards .card:hover {
+.card:hover {
     z-index: 2;
 }
 
-#image-cards .card:hover::before {
+.card:hover::before {
     content: '';
     position: absolute;
     inset: -16px;
     z-index: -1;
 }
 
-#image-cards .buttons {
+.buttons {
     display: flex;
     align-items: center;
     justify-content: flex-end;
@@ -381,7 +382,7 @@ body.alt-active #image-cards .card .card-title {
     transition: .1s ease-in-out;
 }
 
-#image-cards .button {
+.button {
     background-color: var(--card-btnBackgroundColor);
     border-radius: calc(var(--card-borderRadius) - var(--card-padding));;
     line-height: 1;
@@ -389,20 +390,18 @@ body.alt-active #image-cards .card .card-title {
     width: 2em;
     height: 2em;
     box-sizing: border-box;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    padding: .5em;
 }
 
-#image-cards .button[disabled] {
+.button[disabled] {
     opacity: .5;
 }
 
-#image-cards .button[data-id] {
+.button:not([disabled]) {
     cursor: pointer;
 }
 
-#image-cards .button[data-id]:hover {
+.button:not([disabled]):hover {
     background-color: var(--card-btnBackgroundColorHover);
 }
 
@@ -412,7 +411,7 @@ body.alt-active #image-cards .card .card-title {
     min-height: calc(var(--card-textLines) * var(--card-lineHeight) * 1em);
 }
 
-#image-cards .card-related-tags {
+.card-related-tags {
     line-height: 1.1;
     font-size: .5em;
     position: absolute;
@@ -424,15 +423,15 @@ body.alt-active #image-cards .card .card-title {
     text-shadow: 0 0 2px #000;
 }
 
-#image-cards .card.card-matched .card-related-tags {
+.card.card-matched .card-related-tags {
     display: flex;
 }
 
-#image-cards .related-tag {
+.related-tag {
     display: none;
 }
 
-#image-cards .related-tag.related-tag-matched {
+.related-tag.related-tag-matched {
     display: inline;
 }
 

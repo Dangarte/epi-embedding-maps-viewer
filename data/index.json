@@ -4,6 +4,9 @@
         "title": "General Tags (1024)",
         "changed": "2024-11-21T09:46:00Z",
         "type": "spaces",
+        "nodesCount": 1024,
+        "fileSize": 14779442,
+        "tags": [ "Space", "General" ],
         "url": "https://dangarte.github.io/epi-embedding-maps-viewer/data/v1-tags-1024.json"
     },
     {
@@ -11,6 +14,9 @@
         "title": "General Tags (2048)",
         "changed": "2024-11-21T09:46:00Z",
         "type": "spaces",
+        "nodesCount": 2048,
+        "fileSize": 29982187,
+        "tags": [ "Space", "General" ],
         "url": "https://dangarte.github.io/epi-embedding-maps-viewer/data/v1-tags-2048.json"
     },
     {
@@ -18,6 +24,9 @@
         "title": "Artists Tags (1024)",
         "changed": "2024-11-21T09:46:00Z",
         "type": "spaces",
+        "nodesCount": 1024,
+        "fileSize": 14805204,
+        "tags": [ "Space", "Artists" ],
         "url": "https://dangarte.github.io/epi-embedding-maps-viewer/data/v1-artists-1024.json"
     },
     {
@@ -25,6 +34,9 @@
         "title": "Characters (1024)",
         "changed": "2024-11-21T09:46:00Z",
         "type": "spaces",
+        "nodesCount": 1024,
+        "fileSize": 14556129,
+        "tags": [ "Space", "Characters" ],
         "url": "https://dangarte.github.io/epi-embedding-maps-viewer/data/v1-chars-1024.json"
     },
     {
@@ -32,6 +44,9 @@
         "title": "Hair (1365)",
         "changed": "2024-11-21T09:46:00Z",
         "type": "spaces",
+        "nodesCount": 1365,
+        "fileSize": 12349173,
+        "tags": [ "Space", "Hair styles" ],
         "url": "https://dangarte.github.io/epi-embedding-maps-viewer/data/v1-hair-styles.json"
     },
     {
@@ -39,6 +54,9 @@
         "title": "[OLD] Artists Tags (2048)",
         "changed": "2024-12-02T16:55:00Z",
         "type": "spaces",
+        "nodesCount": 2048,
+        "fileSize": 33909128,
+        "tags": [ "Old", "Space", "Artists" ],
         "url": "https://dangarte.github.io/epi-embedding-maps-viewer/data/v0-artists-2048.json"
     },
     {
@@ -47,6 +65,9 @@
         "description": "This is a version with images converted to webp (63 quality) to compress the file to the 100 MB limit",
         "changed": "2024-12-04T15:00:00Z",
         "type": "spaces",
+        "nodesCount": 8192,
+        "fileSize": 98601249,
+        "tags": [ "Old", "Space", "Artists" ],
         "url": "https://dangarte.github.io/epi-embedding-maps-viewer/data/v0-artists-8192-webp-63.json"
     },
     {
@@ -54,6 +75,9 @@
         "title": "[OLD] artis-style",
         "changed": "2024-12-02T16:55:00Z",
         "type": "spaces",
+        "nodesCount": 456,
+        "fileSize": 7157592,
+        "tags": [ "Old", "Space", "Artists" ],
         "url": "https://dangarte.github.io/epi-embedding-maps-viewer/data/v0-artis-style.json"
     },
     {
@@ -61,6 +85,9 @@
         "title": "[OLD] Characters (1024)",
         "changed": "2024-12-02T16:55:00Z",
         "type": "spaces",
+        "nodesCount": 1024,
+        "fileSize": 18007782,
+        "tags": [ "Old", "Space", "Characters" ],
         "url": "https://dangarte.github.io/epi-embedding-maps-viewer/data/v0-chars-1024.json"
     },
     {
@@ -68,6 +95,9 @@
         "title": "[OLD] Characters Simplified (1024)",
         "changed": "2024-12-02T16:55:00Z",
         "type": "spaces",
+        "nodesCount": 1024,
+        "fileSize": 14550700,
+        "tags": [ "Old", "Space", "Characters" ],
         "url": "https://dangarte.github.io/epi-embedding-maps-viewer/data/v0-chars-1024-simplified.json"
     },
     {
@@ -75,6 +105,9 @@
         "title": "[OLD] Hair (1365)",
         "changed": "2024-12-02T16:55:00Z",
         "type": "spaces",
+        "nodesCount": 1365,
+        "fileSize": 12144866,
+        "tags": [ "Old", "Space", "Hair styles" ],
         "url": "https://dangarte.github.io/epi-embedding-maps-viewer/data/v0-hair-styles.json"
     },
     {
@@ -82,6 +115,9 @@
         "title": "[Graph] LLM Based Prompt Inspo",
         "changed": "2024-12-05T10:00:00Z",
         "type": "graphs",
+        "nodesCount": 613,
+        "fileSize": 33721244,
+        "tags": [ "Graph", "LLM Prompts" ],
         "url": "https://dangarte.github.io/epi-embedding-maps-viewer/data/graph-q5w959.json"
     },
     {
@@ -89,13 +125,19 @@
         "title": "[Graph] Fantasy Prompt Tree (photoreal model)",
         "changed": "2024-12-06T17:00:00Z",
         "type": "graphs",
+        "nodesCount": 85,
+        "fileSize": 4131129,
+        "tags": [ "Graph", "Photoreal" ],
         "url": "https://dangarte.github.io/epi-embedding-maps-viewer/data/graph-ho82sz.json"
     },
     {
         "id": "test-no-images-27982",
-        "title": "[TEST] [No images] Artists text UMAP",
+        "title": "[TEST] [No images] Artists text UMAP (27982)",
         "changed": "2024-12-06T20:00:00Z",
         "type": "spaces",
+        "nodesCount": 27982,
+        "fileSize": 2109013,
+        "tags": [ "Old", "Test", "Space", "Artists", "No Images" ],
         "url": "https://dangarte.github.io/epi-embedding-maps-viewer/data/v00-test-no-images-27982.json"
     }
 ]

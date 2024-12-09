@@ -1,5 +1,5 @@
 // Version info
-const VERSION = '7.12.24'; // Last modified date
+const VERSION = '9.12.24'; // Last modified date
 
 // Online info
 const HOST = 'https://dangarte.github.io/epi-embedding-maps-viewer';
@@ -69,7 +69,6 @@ const INDEX = [];
 // Define canvas
 const CANVAS_WIDTH = window.innerWidth;
 const CANVAS_HEIGHT = window.innerHeight;
-const cardsContainer = document.getElementById('image-cards');
 const cardsCanvas = document.getElementById('image-canvas');
 const cardsCanvasCtx = getCanvasContext(cardsCanvas, CANVAS_WIDTH, CANVAS_HEIGHT);
 
@@ -81,8 +80,8 @@ const ICON_BOOK = document.querySelector('.icon[data-icon="book"]')?.cloneNode(t
 const searchInput = document.getElementById('search');
 const searchGoToNextButton = document.getElementById('goto-search');
 const searchClearButton = document.getElementById('search-clear');
-const statusElement = document.getElementById('cards-in-viewport');
 const graphSVG = document.getElementById('graph-svg');
+const graphContainer = document.getElementById('graph-container');
 graphSVG.setAttribute('viewBox', `0 0 ${CANVAS_WIDTH} ${CANVAS_HEIGHT}`);
 
 // Insert card styles in page
@@ -94,10 +93,12 @@ CARD_STYLE.lineHeight = Number(CARD_STYLE.lineHeight);
 // Current viewer state
 const STATE = {
     ready: false,
+    renderController: null,
     source: {},
     data: [],
     edges: null,
     previewControllers: {},
+    renderController: {},
     space: 0,
     scale: SCALE_BASE,
     renderedScale: null,
@@ -114,7 +115,6 @@ const STATE = {
     altKey: false,
     isZooming: false,
     pinchDistance: null,
-    filter: null,
     matched: [],
     notMatched: [],
     selectedGraph: -1,
@@ -123,6 +123,37 @@ const STATE = {
 
 // Controller classes
 
+
+class ControlsController {
+    static viewportStatusElement = document.getElementById('cards-in-viewport');
+    static cardsContainerElement = document.getElementById('cards-container');
+    static searchInputElement = document.getElementById('search');
+
+    static updateEmbeddingList(newEmbeddingList) {
+        STATE.space = 0;
+        const switchEmbList = document.getElementById('switch-spaces');
+        switchEmbList.textContent = '';
+        newEmbeddingList.forEach((title, index) => insertElement('option', switchEmbList, { value: index }, title));
+        switchEmbList.value = STATE.space;
+    }
+
+    static updateViewportStatus() {
+        this.viewportStatusElement.textContent = `${STATE.cardScale} (x${STATE.visibleCardsCount})`;
+        // This is for displaying the scale while calibrating the preview size
+        // this.viewportStatusElement.textContent = `${+STATE.scale.toFixed(3)}: ${STATE.cardScale} (x${STATE.visibleCardsCount})`;
+    }
+
+    static emptyAllInputs() {
+        this.searchInputElement.value = '';
+        this.cardsContainerElement.textContent = '';
+        const dataListSelector = document.getElementById('data-list');
+        dataListSelector.textContent = '';
+        dataListSelector.value = '';
+        const switchEmbSelector = document.getElementById('switch-spaces');
+        switchEmbSelector.textContent = '';
+        switchEmbSelector.value = '';
+    }
+}
 
 class CardsPreviewController {
     data = [];
@@ -137,9 +168,8 @@ class CardsPreviewController {
         this.scale = scale;
 
         // List of maximum canvas sizes in browsers: https://jhildenbiddle.github.io/canvas-size/#/?id=test-results
-        const maxCanvasScaleFactor = .25;
-        const maxHeight = 16384 * maxCanvasScaleFactor;
-        const maxWidth = 16384 * maxCanvasScaleFactor;
+        const maxHeight = 16384;
+        const maxWidth = 16384;
 
         this.data = data;
         const cardsCount = data.length;
@@ -242,7 +272,7 @@ class CardsPreviewController {
             });
 
             const TEMPLATE_MIN_COUNT = 200;
-            STATE.sizes.forEach(item => {
+            STATE.renderController.sizes.forEach(item => {
                 const { key, width, height, count } = item;
                 if (count < TEMPLATE_MIN_COUNT) return;
                 const scaledWidth = Math.round(width * scale);
@@ -373,6 +403,8 @@ class CardsPhysicController {
     grid;
     gridSizeX;
     gridSizeY;
+    gridLarge;
+    gridLargeScale;
     pointWidth;
     pointHeight;
     
@@ -385,26 +417,55 @@ class CardsPhysicController {
     }
     
     updatePoints() {
-        this.points = this.data.map((p, i) => ({ x: p.x, y: p.y, i }));
         this.grid = {};
 
+        const grid = this.grid;
         const cellSizeX = this.pointWidth;
         const cellSizeY = this.pointHeight;
-        const grid = this.grid;
 
-        this.points.forEach((p, i) => {
+        this.points = this.data.map((p, i) => {
             const gridX = Math.floor(p.x / cellSizeX);
             const gridY = Math.floor(p.y / cellSizeY);
 
-            const cell = grid[gridX]?.[gridY] ?? this.#createCell(gridX, gridY);
-            cell.list.add(i);
-            p.gridX = gridX;
-            p.gridY = gridY;
-            p.gridCell = cell;
+            const gridCell = grid[gridX]?.[gridY] ?? this.#createCell(gridX, gridY);
+            gridCell.list.add(i);
+            return { x: p.x, y: p.y, i, width: p.width, height: p.height, gridX, gridY, gridCell };
         });
 
         this.gridSizeX = cellSizeX;
         this.gridSizeY = cellSizeY;
+
+        this.fillLargeGrid();
+    }
+
+    fillLargeGrid() {
+        this.gridLarge = {};
+        this.gridLargeScale = 7;
+        const gridLarge = this.gridLarge;
+        const cellLargeSizeX = this.gridSizeX * this.gridLargeScale;
+        const cellLargeSizeY = this.gridSizeY * this.gridLargeScale;
+
+        const createLargeCell = (gridLargeX, gridLargeY) => {
+            if (!gridLarge[gridLargeX]) gridLarge[gridLargeX] = {};
+            const cell = new Set();
+            gridLarge[gridLargeX][gridLargeY] = cell;
+            return cell;
+        };
+
+        this.points.forEach((p, i) => {
+            const gridLargeX1 = Math.floor(p.x / cellLargeSizeX);
+            const gridLargeX2 = Math.floor((p.x - p.width) / cellLargeSizeX);
+            const gridLargeY1 = Math.floor(p.y / cellLargeSizeY);
+            const gridLargeY2 = Math.floor((p.y - p.height) / cellLargeSizeY);
+
+            const cellLarge1 = gridLarge[gridLargeX1]?.[gridLargeY1] ?? createLargeCell(gridLargeX1, gridLargeY1);
+            cellLarge1.add(i);
+
+            if (gridLargeX1 !== gridLargeX2 || gridLargeY1 !== gridLargeY2) {
+                const cellLarge2 = gridLarge[gridLargeX2]?.[gridLargeY2] ?? createLargeCell(gridLargeX2, gridLargeY2);
+                cellLarge2.add(i);
+            }
+        });
     }
 
     async overlapFix() {
@@ -552,7 +613,10 @@ class CardsPhysicController {
             if (isGraph) updateGraph();
         }
         
-        if (iteration) addNotify(converged ? 'The overlap has been fixed' : 'Failed to fix overlap, please try again');
+        if (iteration) {
+            addNotify(converged ? 'The overlap has been fixed' : 'Failed to fix overlap, please try again');
+            this.fillLargeGrid();
+        }
         this.isActive = false;
     }
 
@@ -566,15 +630,512 @@ class CardsPhysicController {
 
     #fillGridNeighbors(gridX, gridY, cell) {
         for (let ox = -1; ox <= 1; ox++) {
-            if (!this.grid[gridX + ox]) continue;
+            const row = this.grid[gridX + ox];
+            if (!row) continue;
             for (let oy = -1; oy <= 1; oy++) {
-                const neighborCell = this.grid[gridX + ox][gridY + oy];
+                const neighborCell = row[gridY + oy];
                 if (neighborCell) {
                     neighborCell.neighbors.push(cell);
                     cell.neighbors.push(neighborCell);
                 }
             }
         }
+    }
+}
+
+class RenderController {
+    cardsContainer;
+    data;
+    sizes = [];
+    ctx;
+
+    #renderEngine;
+    #render_preview;
+
+    #scale = SCALE_BASE;
+    #panX = 0;
+    #panY = 0;
+    #filter = '';
+    #renderedProperty = { panX: null, panY: null, scale: null };
+
+    #viewportWidth = 0;
+    #viewportHeight = 0;
+    #viewportStartX = 0;
+    #viewportEndX = 0;
+    #viewportStartY = 0;
+    #viewportEndY = 0;
+    #skipRender;
+
+    #atlas = [];
+    #atlasCoord = [];
+
+    constructor(data, renderEngine = '2d') {
+        this.#viewportWidth = CANVAS_WIDTH;
+        this.#viewportHeight = CANVAS_HEIGHT;
+
+        this.#renderEngine = renderEngine;
+        this.data = data;
+        this.cardsContainer = document.getElementById('cards-container');
+
+        if (renderEngine === 'dom') { // DOM
+            this.#render_preview = this.#render_DOM;
+            this.ctx = null;
+        } else if (renderEngine === 'webgl2') { // WebGl2
+            this.#render_preview = this.#render_WebG2L;
+            this.ctx = this.#r_WebGL2_getContext();
+        } else if (renderEngine === '2d') { // 2d
+            this.#render_preview = this.#render_2d;
+            this.ctx = this.#r_2d_getContext();
+        } else { // Error
+            throw new Error(`Wrong render engine: ${renderEngine}`);
+        }
+    }
+
+    async init() {
+        await this.#decodeImages();
+        this.#calculateCardSizes();
+
+        const sizes = {};
+        this.data.proj.forEach(item => {
+            const key = `${item.width},${item.height}`;
+            if (sizes[key]) sizes[key]++;
+            else sizes[key] = 1;
+            item.sizeKey = key;
+        });
+        this.sizes = Object.keys(sizes).map(key => {
+            const [ width, height ] = key.split(',').map(a => Number(a));
+            return { width, height, key, count: sizes[key] };
+        }).sort((a, b) => b.count - a.count);
+        
+        STATE.maxCardWidth = Math.max(...STATE.data.map(item => item.width));
+        STATE.maxCardHeight = Math.max(...STATE.data.map(item => item.height));
+    }
+
+    destroy() { // TODO
+
+    }
+
+    render(force = false) {
+        if (!STATE.ready) return;
+
+        this.updateProperty(force);
+
+        const { visibleCardsCount } = this.#scale > CARD_SCALE_PREVIEW ? this.#render_DOM() : this.#render_preview();
+
+        STATE.visibleCardsCount = visibleCardsCount;
+        ControlsController.updateViewportStatus();
+    }
+
+    updateProperty(force = false) {
+        let somethingIsChanged = false;
+        if (force || this.#renderedProperty.scale !== this.#scale) {
+            document.body.style.setProperty('--scale', this.#scale);
+            this.#scaleChanged();
+            this.#renderedProperty.scale = this.#scale;
+            somethingIsChanged = true;
+        }
+        if (force || this.#renderedProperty.panX !== this.#panX) {
+            this.#renderedProperty.panX = this.#panX;
+            somethingIsChanged = true;
+        }
+        if (force || this.#renderedProperty.panY !== this.#panY) {
+            this.#renderedProperty.panY = this.#panY;
+            somethingIsChanged = true;
+        }
+        if (somethingIsChanged) {
+            this.#calculateViewport();
+            const styleString = `transform: translate3d(${this.#panX}px, ${this.#panY}px, 0) scale(${this.#scale});`;
+            this.cardsContainer.style.cssText = styleString;
+            graphContainer.style.cssText = styleString;
+        }
+        return somethingIsChanged;
+    }
+
+    switchSapce(newSpaceIndex) {
+
+    }
+
+    set scale(newScale) {
+        this.#scale = newScale;
+        STATE.scale = newScale;
+    }
+
+    set panX(newPanX) {
+        this.#panX = newPanX;
+        STATE.panX = newPanX;
+    }
+
+    set panY(newPanY) {
+        this.#panY = newPanY;
+        STATE.panY = newPanY;
+    }
+
+    set filter(newFilter) {
+        this.#filter = newFilter;
+    }
+
+    get scale () {
+        return this.#scale;
+    }
+
+    get panX() {
+        return this.#panX;
+    }
+
+    get panY() {
+        return this.#panY;
+    }
+
+    get filter() {
+        return this.#filter;
+    }
+
+    //
+
+    #createAtlas(id, scale) {
+
+    }
+
+    async #decodeImages() {
+        const promises = [];
+        const { width, height } = this.data.kv ?? {};
+        const aspectRatio = width / height;
+        const data = this.data.proj;
+        data.forEach(info => typeof info.image === 'string' ? promises.push(base64ToImage(info.image)) : null);
+        const images = await Promise.all(promises);
+        images.forEach((image, index) => {
+            image.width = image.naturalWidth;
+            image.height = aspectRatio ? Math.round(image.width / aspectRatio) : image.naturalHeight;
+            data[index].image = image;
+        });
+    }
+
+    #calculateCardSizes() {
+        const data = this.data.proj;
+        const image = data[0].image ?? { width: 256, height: 256 };
+        const padding = CARD_STYLE.padding + CARD_STYLE.borderWidth;
+        const additionalWidth = padding * 2;
+        const additionalHeight = padding * 4 + CARD_STYLE.fontSize; // padding * 2 + controls margin-top + text margin-top
+        const lineHeight = CARD_STYLE.fontSize * CARD_STYLE.lineHeight;
+
+        const measuringCanvas = new OffscreenCanvas(image.width, image.height);
+        const measuringCtx = measuringCanvas.getContext('2d');
+        measuringCtx.font = `normal ${CARD_STYLE.fontSize}px ${CARD_STYLE.font}`;
+
+        const charMeasureCache = new Map();
+        const splitTextIntoChunks = text => {
+            const chunks = [];
+            const textEnd = text.length;
+            let startIndex = 0;
+
+            while (startIndex < textEnd) {
+                const spaceIndex = text.indexOf(' ', startIndex);
+                const dashIndex = text.indexOf('-', startIndex);
+
+                const endIndex = spaceIndex === -1 ? dashIndex === -1 ? textEnd : dashIndex : dashIndex === -1 ? spaceIndex : Math.min(spaceIndex, dashIndex);
+
+                chunks.push(text.slice(startIndex, endIndex) + (text[endIndex] ?? ''));
+
+                startIndex = endIndex + 1;
+            }
+
+            return chunks;
+        };
+        const measureChar = char => {
+            const charWidth = measuringCtx.measureText(char).width;
+            charMeasureCache.set(char, charWidth);
+            return charWidth;
+        };
+        const measureText = text => {
+            let width = 0;
+            for(let i = text.length - 1; i >= 0; i--) width += charMeasureCache.get(text[i]) ?? measureChar(text[i]);
+            return width;
+        };
+        const prepareLines = (text, maxWidth) => {
+            const words = splitTextIntoChunks(text);
+            let line = '';
+            let testLineWidth = 0;
+            const lines = [];
+
+            for (const word of words) {
+                const wordWidth = measureText(word);
+
+                if (testLineWidth + wordWidth > maxWidth && line) {
+                    lines.push(line);
+                    line = word;
+                    testLineWidth = wordWidth;
+                } else {
+                    line += word;
+                    testLineWidth += wordWidth;
+                }
+            }
+
+            lines.push(line);
+            return lines;
+        };
+
+        data.forEach(item => {
+            const { image = {}, title } = item;
+            const { width: w = 256, height: h = 256 } = image;
+            const lines = item.lines ?? prepareLines(title, w);
+            item.lines = lines;
+            item.width = Math.round(w + additionalWidth);
+            item.height = Math.round(h + lineHeight * lines.length + additionalHeight);
+        });
+
+        measuringCanvas.width = 0;
+        measuringCanvas.height = 0;
+    }
+
+    #scaleChanged() {
+        render_recalcRenderScale();
+    }
+
+    #calculateViewport() {
+        const scale = this.#scale;
+        const panX = this.#panX;
+        const panY = this.#panY;
+        const data = this.data.proj;
+
+        const vsY = this.#viewportStartY = -panY / scale;
+        const veY = this.#viewportEndY = this.#viewportStartY + this.#viewportHeight / scale;
+        const vsX = this.#viewportStartX = -panX / scale;
+        const veX = this.#viewportEndX = this.#viewportStartX + this.#viewportWidth / scale;
+
+        const skipRender = this.#skipRender = Array(data.length).fill(true);
+
+        const physics = STATE.physics;
+        const vg = physics.gridLarge;
+        const vgSizeX = physics.gridSizeX * physics.gridLargeScale;
+        const vgSizeY = physics.gridSizeY * physics.gridLargeScale;
+        const fvgStartX = Math.floor(vsX / vgSizeX);
+        const fvgEndX = Math.ceil(veX / vgSizeX);
+        const fvgStartY = Math.floor(vsY / vgSizeY);
+        const fvgEndY = Math.ceil(veY / vgSizeY);
+        const vgStartX = fvgStartX - 1;
+        const vgEndX = fvgEndX;
+        const vgStartY = fvgStartY - 1;
+        const vgEndY = fvgEndY;
+
+
+        for (const rowX in vg) {
+            if (rowX < vgStartX || rowX > vgEndX || !vg[rowX]) continue;
+            const row = vg[rowX];
+            const isRowFullyInViewport = rowX > fvgStartX && rowX < fvgEndX;
+            for (const cellY in row) {
+                if (cellY < vgStartY || cellY > vgEndY || !row[cellY]) continue;
+                const cell = row[cellY];
+                const isCellFullyInViewport = isRowFullyInViewport && cellY > fvgStartY && cellY < fvgEndY;
+                cell.forEach(index => {
+                    if (isCellFullyInViewport) skipRender[index] = false;
+                    else {
+                        const { x, y, width, height } = data[index];
+                        if (vsX < x + width && veX > x && vsY < y + height && veY > y) skipRender[index] = false;
+                    }
+                });
+            }
+        }
+    }
+
+    // ———  Render DOM  ———
+
+    #render_DOM() {
+        const filter = this.#filter;
+        const data = this.data.proj;
+        const skipRender = this.#skipRender;
+
+        let visibleCardsCount = 0;
+
+        const moveElement = (d, isMatched) => {
+            if (skipRender[d.index]) {
+                if (d.cardElement?.inDOM) this.#r_DOM_removeCard(d.cardElement);
+                return;
+            }
+            visibleCardsCount++;
+            
+            const { x, y, cardElement = this.#r_DOM_createCard(d) } = d;
+            // cardElement.element.style.cssText = `transform: translate(${scaledX + panX}px, ${scaledY + panY}px) scale(${scale});`;
+            // cardElement.element.style.transform = `translate(${scaledX + panX}px, ${scaledY + panY}px) scale(${scale})`;
+            if (cardElement.x !== x) {
+                cardElement.style.left = `${x}px`;
+                cardElement.x = x;
+            }
+            if (cardElement.y !== y) {
+                cardElement.style.top = `${y}px`;
+                cardElement.y = y;
+            }
+
+            if (cardElement.filter !== filter) this.#r_DOM_updateCardFilter(cardElement, filter);
+            if (cardElement.matched !== isMatched) this.#r_DOM_toggleCardMatched(cardElement, isMatched);
+            if (!cardElement.inDOM) this.#r_DOM_appendCard(cardElement);
+        };
+
+        if (filter) {
+            // Move matching elements to end (so that they are not covered by other elements)
+            const { matched, notMatched } = STATE;
+            for (const d of notMatched) moveElement(d, false);
+            for (const d of matched) moveElement(d, true);
+        } else {
+            for (const d of data) moveElement(d, false);
+        }
+
+        return { visibleCardsCount };
+    }
+
+    #r_DOM_scaleChanged() {
+
+    }
+
+    #r_DOM_createCard(d) {
+        const { element, titleElement, searchList } = createCardElement(d);
+        const style = element.style;
+        // element.style.cssText = `width: ${Math.round(STATE.renderedScaleCache.w)}px; left: ${d.x}px; top: ${d.y}px;`;
+        style.width = `${Math.round(STATE.renderedScaleCache.w)}px`;
+        const searchInfo = d.relatedTags.map(({ title, searchText }, i) => ({ title, searchText, element: searchList[i] }));
+        searchInfo.push({ title: d.title, searchText: d.title.toLowerCase(), element: titleElement });
+        d.cardElement = { inDOM: false, element, style, title: d.title, searchInfo, matched: false };
+        return d.cardElement;
+    }
+
+    #r_DOM_updateCardFilter(cardElement, filter) {
+        const { searchInfo } = cardElement;
+        cardElement.filter = filter;
+
+        const processString = (element, string, lowerString) => {
+            const indexStart = lowerString.indexOf(filter);
+            const indexEnd = indexStart + filter.length;
+            const selectionPrefix = string.substring(0, indexStart);
+            const selectionContent = string.substring(indexStart, indexEnd);
+            const selectionEnd = string.substring(indexEnd);
+            
+            const fragment = new DocumentFragment();
+            if (selectionPrefix) fragment.appendChild(document.createTextNode(selectionPrefix));
+            fragment.appendChild(createElement('mark', undefined, selectionContent));
+            if (selectionEnd) fragment.appendChild(document.createTextNode(selectionEnd));
+            element.textContent = '';
+            element.appendChild(fragment);
+        };
+
+        searchInfo.forEach(item => {
+            const { title, searchText, element } = item;
+            const isMatched = filter && searchText.includes(filter);
+            if (isMatched) processString(element, title, searchText);
+            else element.textContent = title;
+            element.classList.toggle('related-tag-matched', isMatched);
+        });
+    }
+
+    #r_DOM_toggleCardMatched(cardElement, isMatched) {
+        cardElement.element.classList.toggle('card-matched', isMatched);
+        cardElement.matched = isMatched;
+    }
+
+    #r_DOM_appendCard(cardElement) {
+        this.cardsContainer.appendChild(cardElement.element);
+        cardElement.inDOM = true;
+    }
+
+    #r_DOM_removeCard(cardElement) {
+        cardElement.element.remove();
+        cardElement.inDOM = false;
+    }
+
+    // ———  Render 2d  ———
+
+    #render_2d() {
+        const filter = this.#filter;
+        const data = this.data.proj;
+        const panX = this.#panX;
+        const panY = this.#panY;
+        const scale = this.#scale;
+        const ctx = this.ctx;
+        const skipRender = this.#skipRender;
+
+        ctx.save();
+        ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+        ctx.translate(panX, panY);
+
+        ctx.fillStyle = CARD_STYLE.matchedColor;
+        ctx.strokeStyle = CARD_STYLE.matchedColor;
+        ctx.lineWidth = STATE.renderedScaleCache.outlineWidth;
+
+        const { mathcedOutlineImages, outlineWidth, borderRadius, drawOnlyMatchedOutline } = STATE.renderedScaleCache;
+        const outlineWidthHalf = outlineWidth / 2;
+
+        let visibleCardsCount = 0;
+
+        const drawItem = (d, isMatched) => {
+            if (skipRender[d.index]) return;
+            visibleCardsCount++;
+
+            if (d.scaledTo !== scale) this.#r_2d_calculateCardScale(d);
+            
+            const { scaledX, scaledY, scaledWidth, scaledHeight, previewInfo } = d;
+            const { x: previewX, y: previewY, width: previewWidth, height: previewHeight, canvas } = previewInfo;
+            if (isMatched) {
+                if (!drawOnlyMatchedOutline) ctx.drawImage(canvas, previewX, previewY, previewWidth, previewHeight, scaledX, scaledY, scaledWidth, scaledHeight);
+                const outlineImage = mathcedOutlineImages.get(d.sizeKey);
+                if (outlineImage) ctx.drawImage(outlineImage, scaledX - outlineWidth, scaledY - outlineWidth);
+                else {
+                    if (drawOnlyMatchedOutline) ctx.fill(getRoundedRectPath(scaledWidth + outlineWidth, scaledHeight + outlineWidth, borderRadius, scaledX - outlineWidthHalf, scaledY - outlineWidthHalf));
+                    else ctx.stroke(getRoundedRectPath(scaledWidth, scaledHeight, borderRadius, scaledX, scaledY));
+                }
+            } else ctx.drawImage(canvas, previewX, previewY, previewWidth, previewHeight, scaledX, scaledY, scaledWidth, scaledHeight);
+        };
+
+        if (filter) {
+            // Move matching elements to end (so that they are not covered by other elements)
+            const { matched, notMatched } = STATE;
+            for (const d of notMatched) drawItem(d, false);
+            for (const d of matched) drawItem(d, true);
+        } else {
+            for (const d of data) drawItem(d, false);
+        }
+
+        ctx.restore();
+
+        return { visibleCardsCount };
+    }
+
+    #r_2d_calculateCardScale(d) {
+        const scale = this.#scale;
+        d.scaledX = d.x * scale;
+        d.scaledY = d.y * scale;
+        d.scaledWidth = d.width * scale;
+        d.scaledHeight = d.height * scale;
+        d.scaledTo = scale;
+    }
+
+    #r_2d_getContext() {
+        const canvas = document.getElementById('image-canvas');
+        const ctx = canvas.getContext('2d', { alpha: true });
+
+        ctx.imageSmoothingEnabled = CANVAS_SMOOTHING;
+        ctx.imageSmoothingQuality = CANVAS_SMOOTHING_QUALITY;
+        ctx.textRendering = CANVAS_TEXT_QUALITY;
+
+        return ctx;
+    }
+
+    #r_2d_scaleChanged() {
+
+    }
+
+    // ———  Render WebGL2  ———
+
+    #render_WebG2L() {
+
+    }
+
+    #r_WebGL2_getContext() {
+        const canvas = document.getElementById('image-canvas');
+        const gl = canvas.getContext('webgl2', { alpha: true });
+
+        return gl;
+    }
+
+    #r_WebGL2_scaleChanged() {
+
     }
 }
 
@@ -617,7 +1178,7 @@ async function selectData(id) {
     });
     delete STATE.maxCardWidth;
     delete STATE.maxCardHeight;
-    cardsContainer.textContent = '';
+    document.getElementById('cards-container').textContent = '';
 
     // Load data from file
     await setLoadingStatus('Loading data');
@@ -639,30 +1200,12 @@ async function selectData(id) {
     });
 
     // Add list of spaces and reset selected
-    STATE.space = 0;
-    const switchEmbList = document.getElementById('switch-spaces');
-    switchEmbList.textContent = '';
-    STATE.source.spaces.forEach((title, index) => insertElement('option', switchEmbList, { value: index }, title));
-    switchEmbList.value = STATE.space;
 
-    await setLoadingStatus('Decoding images');
-    await processImages(STATE.data);
+    await setLoadingStatus('Prepare to render');
+    STATE.renderController = new RenderController(STATE.source, '2d');
+    await STATE.renderController.init();
 
-    await setLoadingStatus('Calculating card sizes');
-    recalcCardSizes(STATE.data);
-    const sizes = {};
-    STATE.data.forEach(item => {
-        const key = `${item.width},${item.height}`;
-        if (sizes[key]) sizes[key]++;
-        else sizes[key] = 1;
-        item.sizeKey = key;
-    });
-    STATE.sizes = Object.keys(sizes).map(key => {
-        const [ width, height ] = key.split(',').map(a => Number(a));
-        return { width, height, key, count: sizes[key] };
-    }).sort((a, b) => b.count - a.count);
-    STATE.maxCardWidth = Math.max(...STATE.data.map(item => item.width));
-    STATE.maxCardHeight = Math.max(...STATE.data.map(item => item.height));
+    ControlsController.updateEmbeddingList(STATE.source.spaces);
     
     await setLoadingStatus('Generating preview');
     if (CARD_SCALE_PREVIEW >= SCALE_MIN) {
@@ -726,30 +1269,33 @@ function selectSpace(data, space) {
     const skipThisCards = new Set();
 
     // Select data
+    let { x: minX, x: maxX, y: minY, y: maxY } = data[0].spaces[space];
     data.forEach((d, i) => {
-        const sp = d.spaces[space];
-        d.x = sp.x;
-        d.y = sp.y;
-        if (sp.positionAbsolute) skipThisCards.add(i);
+        const { x, y, positionAbsolute } = d.spaces[space];
+        d.x = x;
+        d.y = y;
+
+        if (positionAbsolute) skipThisCards.add(i);
+
+        if (x < minX) minX = x;
+        else if (x > maxX) maxX = x;
+        if (y < minY) minY = y;
+        else if (y > maxY) maxY = y;
     });
 
     // Normalize data
-    const allX = data.map(d => d.x);
-    const allY = data.map(d => d.y);
-    const minX = Math.min(...allX);
-    const minY = Math.min(...allY);
-    const rangeX = Math.max(...allX) - minX;
-    const rangeY = Math.max(...allY) - minY;
+    const rangeX = maxX - minX;
+    const rangeY = maxY - minY;
 
     const scaleFactor = Math.min(CANVAS_WIDTH / rangeX, CANVAS_HEIGHT / rangeY) * spacing * (data.length > dataCountSpacingFactor ? Math.min(data.length / dataCountSpacingFactor, maxDataSpacingFactor) : 1);
 
-    const offsetX = (CANVAS_WIDTH - rangeX * scaleFactor) / 2;
-    const offsetY = (CANVAS_HEIGHT - rangeY * scaleFactor) / 2;
+    const offsetX = (CANVAS_WIDTH - rangeX * scaleFactor) / 2 - minX * scaleFactor;
+    const offsetY = (CANVAS_HEIGHT - rangeY * scaleFactor) / 2 - minY * scaleFactor;
 
     data.forEach((d, i) => {
         if (skipThisCards.has(i)) return;
-        d.x = (d.x - minX) * scaleFactor + offsetX;
-        d.y = (d.y - minY) * scaleFactor + offsetY;
+        d.x = d.x * scaleFactor + offsetX;
+        d.y = d.y * scaleFactor + offsetY;
     });
 
     STATE.renderedScale = null;
@@ -769,20 +1315,20 @@ function recalcCardSizes(data) {
 
     const charMeasureCache = new Map();
     const splitTextIntoChunks = text => {
-        let chunks = [];
-        let currentChunk = '';
+        const chunks = [];
+        const textEnd = text.length;
+        let startIndex = 0;
 
-        for (let i = 0; i < text.length; i++) {
-            const char = text[i];
+        while (startIndex < textEnd) {
+            const spaceIndex = text.indexOf(' ', startIndex);
+            const dashIndex = text.indexOf('-', startIndex);
 
-            if (char !== ' ' && char !== '-') currentChunk += char;
-            else if (currentChunk) {
-                chunks.push(currentChunk + char);
-                currentChunk = '';
-            }
+            const endIndex = spaceIndex === -1 ? dashIndex === -1 ? textEnd : dashIndex : dashIndex === -1 ? spaceIndex : Math.min(spaceIndex, dashIndex);
+
+            chunks.push(text.slice(startIndex, endIndex) + (text[endIndex] ?? ''));
+
+            startIndex = endIndex + 1;
         }
-
-        if (currentChunk) chunks.push(currentChunk);
 
         return chunks;
     };
@@ -823,7 +1369,7 @@ function recalcCardSizes(data) {
     data.forEach(item => {
         const { image = {}, title } = item;
         const { width: w = 256, height: h = 256 } = image;
-        const lines = prepareLines(title, w);
+        const lines = item.lines ?? prepareLines(title, w);
         item.lines = lines;
         item.width = Math.round(w + additionalWidth);
         item.height = Math.round(h + lineHeight * lines.length + additionalHeight);
@@ -1121,8 +1667,9 @@ function sortByProximity(points) {
 
 // Convert old data to new format
 function convertOldDataToNewFormat(data, name) {
+    const hasSecondSpace = data[0].x2 !== undefined && data[0].y2 !== undefined;
     const newData = {
-        name: name ?? `unknown (${data.length})`,
+        name: name ?? `[OLD] unknown (${data.length})`,
         spaces: [
             'Nomic Vision'
         ],
@@ -1131,21 +1678,9 @@ function convertOldDataToNewFormat(data, name) {
             width: 256,
             height: 256 * 1.46
         },
-        proj: []
+        proj: hasSecondSpace ? data.map(({ x, y, x2, y2, title, image }) => ({ image, title, spaces: [{ x, y }, { x: x2, y: y2 }] })) : data.map(({ x, y, title, image }) => ({ image, title, spaces: [{ x, y }] }))
     };
-    data.forEach(d => {
-        const { x, y, x2, y2, title, image } = d;
-        const point = {
-            image,
-            title,
-            spaces: [
-                { x, y }
-            ]
-        };
-        if (x2 && y2) point.spaces.push({ x: x2, y: y2 });
-        newData.proj.push(point);
-    });
-    if (newData.proj[0].spaces.length === 2) newData.spaces.push('SDLX Pooled Text Encoders');
+    if (hasSecondSpace) newData.spaces.push('SDLX Pooled Text Encoders');
     return newData;
 }
 
@@ -1252,92 +1787,11 @@ function draw() {
         drawRequestAnimationFrameCallbacks.push(resolve);
         if (!drawRequestAnimationFrame) drawRequestAnimationFrame = requestAnimationFrame(() => {
             drawRequestAnimationFrame = null;
-            render();
+            STATE.renderController.render();
             drawRequestAnimationFrameCallbacks.forEach(r => r());
             drawRequestAnimationFrameCallbacks.length = 0;
         });
     });
-}
-
-function render() {
-    if (!STATE.ready) return;
-    const { panX, panY, scale, data, filter } = STATE;
-    const isScaleChanged = STATE.renderedScale !== scale;
-
-    render_updateCSSProperty();
-
-    if (isScaleChanged) render_recalcRenderScale();
-    const { maxCardWidth, maxCardHeight, mathcedOutlineImages, outlineWidth, borderRadius, drawOnlyMatchedOutline } = STATE.renderedScaleCache;
-    const outlineWidthHalf = outlineWidth / 2;
-
-    let visibleCardsCount = 0;
-
-    const useElements = scale > CARD_SCALE_PREVIEW;
-
-    const viewportXStart = -panX - maxCardWidth;
-    const viewportXEnd = -panX + CANVAS_WIDTH;
-    const viewportYStart = -panY - maxCardHeight;
-    const viewportYEnd = -panY + CANVAS_HEIGHT;
-
-    // Apply scale and offset to canvas
-    if (!useElements) {
-        cardsCanvasCtx.save();
-        cardsCanvasCtx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
-        cardsCanvasCtx.translate(panX, panY);
-
-        cardsCanvasCtx.fillStyle = CARD_STYLE.matchedColor;
-        cardsCanvasCtx.strokeStyle = CARD_STYLE.matchedColor;
-        cardsCanvasCtx.lineWidth = outlineWidth;
-    }
-
-    const drawItem = (d, isMatched) => {
-        const { scaledX, scaledY, scaledWidth, scaledHeight } = d;
-        if (scaledX < viewportXStart || scaledX > viewportXEnd || scaledY < viewportYStart || scaledY > viewportYEnd) return;
-        visibleCardsCount++;
-
-        const { x: pointX, y: pointY, width: previewWidth, height: previewHeight, canvas } = d.previewInfo;
-        if (isMatched) {
-            if (!drawOnlyMatchedOutline) cardsCanvasCtx.drawImage(canvas, pointX, pointY, previewWidth, previewHeight, scaledX, scaledY, scaledWidth, scaledHeight);
-            const outlineImage = mathcedOutlineImages.get(d.sizeKey);
-            if (outlineImage) cardsCanvasCtx.drawImage(outlineImage, scaledX - outlineWidth, scaledY - outlineWidth);
-            else {
-                if (drawOnlyMatchedOutline) cardsCanvasCtx.fill(getRoundedRectPath(scaledWidth + outlineWidth, scaledHeight + outlineWidth, borderRadius, scaledX - outlineWidthHalf, scaledY - outlineWidthHalf));
-                else cardsCanvasCtx.stroke(getRoundedRectPath(scaledWidth, scaledHeight, borderRadius, scaledX, scaledY));
-            }
-        } else cardsCanvasCtx.drawImage(canvas, pointX, pointY, previewWidth, previewHeight, scaledX, scaledY, scaledWidth, scaledHeight);
-    };
-    const moveElement = (d, isMatched) => {
-        const { scaledX, scaledY } = d;
-        if (scaledX < viewportXStart || scaledX > viewportXEnd || scaledY < viewportYStart || scaledY > viewportYEnd) {
-            if (d.cardElement?.inDOM) render_removeCardElementFromDOM(d.cardElement);
-            return;
-        }
-        visibleCardsCount++;
-
-        const { style, matched, inDOM, filter: f } = d.cardElement ?? render_createCardElement(d);
-        style.left = `${scaledX + panX}px`;
-        style.top = `${scaledY + panY}px`;
-
-        if (f !== filter) render_updateCardMatchedHint(d.cardElement, filter);
-        if (matched !== isMatched) render_toogleCardElementMatch(d.cardElement, isMatched);
-        if (!inDOM) render_appendCardElementToDOM(d.cardElement);
-    };
-
-    const renderItem = useElements ? moveElement : drawItem;
-
-    if (filter) {
-        // Move matching elements to end (so that they are not covered by other elements)
-        const { matched, notMatched } = STATE;
-        for (const d of notMatched) renderItem(d, false);
-        for (const d of matched) renderItem(d, true);
-    } else {
-        for (const d of data) renderItem(d, false);
-    }
-
-    if (!useElements) cardsCanvasCtx.restore();
-
-    STATE.visibleCardsCount = visibleCardsCount;
-    updateStatsOnPage();
 }
 
 function render_recalcRenderScale() {
@@ -1356,14 +1810,6 @@ function render_recalcRenderScale() {
     const outlineWidth = 2;
     const borderRadius = CARD_STYLE.borderRadius * scale;
 
-    // Update scaled position
-    data.forEach(d => {
-        d.scaledX = d.x * scale;
-        d.scaledY = d.y * scale;
-        d.scaledWidth = d.width * scale;
-        d.scaledHeight = d.height * scale;
-    });
-
     // Update previews
 
     const renderedScale = STATE.renderedScale;
@@ -1379,15 +1825,13 @@ function render_recalcRenderScale() {
         mathcedOutlineImages = null;
     };
 
-    render_updateCSSProperty();
-
     if (useElements) {
         if (!renderedElements) cardsCanvasCtx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
         emptyMatchedOutline();
     } else {
         // Remove all elements if they not nedeed
         if (renderedElements) {
-            cardsContainer.textContent = '';
+            STATE.renderController.cardsContainer.textContent = '';
             data.forEach(d => d.cardElement ? d.cardElement.inDOM = false : null);
         }
 
@@ -1407,7 +1851,7 @@ function render_recalcRenderScale() {
 
         emptyMatchedOutline();
         mathcedOutlineImages = new Map();
-        STATE.sizes.forEach(item => {
+        STATE.renderController.sizes.forEach(item => {
             if (item.count < OUTLINE_PREVIEW_MIN_COUNT) return;
             const { width, height, key } = item;
             const scaledW = Math.round(width * scale);
@@ -1434,76 +1878,6 @@ function render_recalcRenderScale() {
     STATE.cardScale = useElements ? 'Element' : previewScaleCurrent.title;
 }
 
-function render_updateCardMatchedHint(cardElement, filter) {
-    const { searchInfo } = cardElement;
-    cardElement.filter = filter;
-
-    const processString = (element, string, lowerString) => {
-        const indexStart = lowerString.indexOf(filter);
-        const indexEnd = indexStart + filter.length;
-        const selectionPrefix = string.substring(0, indexStart);
-        const selectionContent = string.substring(indexStart, indexEnd);
-        const selectionEnd = string.substring(indexEnd);
-        
-        const fragment = new DocumentFragment();
-        if (selectionPrefix) fragment.appendChild(document.createTextNode(selectionPrefix));
-        fragment.appendChild(createElement('mark', undefined, selectionContent));
-        if (selectionEnd) fragment.appendChild(document.createTextNode(selectionEnd));
-        element.textContent = '';
-        element.appendChild(fragment);
-    };
-
-    searchInfo.forEach(item => {
-        const { title, searchText, element } = item;
-        const isMatched = filter && searchText.includes(filter);
-        if (isMatched) processString(element, title, searchText);
-        else element.textContent = title;
-        element.classList.toggle('related-tag-matched', isMatched);
-    });
-}
-
-function render_createCardElement(d) {
-    const { element, titleElement, searchList } = createCardElement(d);
-    const style = element.style;
-    style.width = `${Math.round(STATE.renderedScaleCache.w)}px`;
-    const searchInfo = d.relatedTags.map(({ title, searchText }, i) => ({ title, searchText, element: searchList[i] }));
-    searchInfo.push({ title: d.title, searchText: d.title.toLowerCase(), element: titleElement });
-    d.cardElement = { inDOM: false, element, style, title: d.title, searchInfo, matched: false };
-    return d.cardElement;
-}
-
-function render_removeCardElementFromDOM(cardElement) {
-    cardElement.element.remove();
-    cardElement.inDOM = false;
-}
-
-function render_appendCardElementToDOM(cardElement) {
-    cardsContainer.appendChild(cardElement.element);
-    cardElement.inDOM = true;
-}
-
-function render_toogleCardElementMatch(cardElement, matched) {
-    cardElement.element.classList.toggle('card-matched', matched);
-    cardElement.matched = matched;
-}
-
-function updateStatsOnPage() {
-    statusElement.textContent = `${STATE.cardScale} (x${STATE.visibleCardsCount})`;
-    // This is for displaying the scale while calibrating the preview size
-    // statusElement.textContent = `${+STATE.scale.toFixed(3)}: ${STATE.cardScale} (x${STATE.visibleCardsCount})`;
-}
-
-function emptyAllInputs() {
-    searchInput.value = '';
-    cardsContainer.textContent = '';
-    const dataListSelector = document.getElementById('data-list');
-    dataListSelector.textContent = '';
-    dataListSelector.value = '';
-    const switchEmbSelector = document.getElementById('switch-spaces');
-    switchEmbSelector.textContent = '';
-    switchEmbSelector.value = '';
-}
-
 function createCardElement(d) {
     const card = createElement('div', { class: 'card', 'data-id': d.id });
     if (d.image) card.appendChild(d.image);
@@ -1523,7 +1897,7 @@ function createCardElement(d) {
 }
 
 function updateGraph(node = null) {
-    graphSVG.textContent = '';
+    graphContainer.textContent = '';
 
     const GRAPH_PADDING = 12;
     const GRAPH_CONTROL_Y = 100;
@@ -1537,7 +1911,7 @@ function updateGraph(node = null) {
         const nodes = STATE.data;
         const selectedIndex = STATE.selectedGraph;
         const selectedNode = nodes[selectedIndex];
-        const graphGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+        const graphGroup = new DocumentFragment();
         const connectedNodes = new Set();
 
         const drawParentEdges = (parentNodeIndex, depth = 1) => {
@@ -1598,31 +1972,10 @@ function updateGraph(node = null) {
             drawRect(nodeIndex, nodeIndex === selectedIndex ? 'graph-selected' : null);
         });
 
-        graphSVG.appendChild(graphGroup);
+        graphContainer.appendChild(graphGroup);
     }
 }
 
-// CSS Property with scale, panX and panY
-const renderPropertyCache = {
-    scale: null,
-    panX: null,
-    panY: null
-}
-function render_updateCSSProperty() {
-    const { scale, panX, panY } = STATE;
-    if (renderPropertyCache.scale !== scale) {
-        document.body.style.setProperty('--scale', scale);
-        renderPropertyCache.scale = scale;
-    }
-    if (renderPropertyCache.panX !== panX) {
-        document.body.style.setProperty('--panX', `${panX}px`);
-        renderPropertyCache.panX = panX;
-    }
-    if (renderPropertyCache.panY !== panY) {
-        document.body.style.setProperty('--panY', `${panY}px`);
-        renderPropertyCache.panY = panY;
-    }
-}
 
 // Path for image rounded corners
 const pathCache = new Map();
@@ -1679,32 +2032,35 @@ function recenterView(animate = true) {
 
     if (animate) animatedPanTo(newPanX, newPanY, newScale);
     else {
-        STATE.panX = newPanX;
-        STATE.panY = newPanY;
-        STATE.scale = newScale;
+        const controller = STATE.renderController;
+        controller.scale = newScale;
+        controller.panX = newPanX;
+        controller.panY = newPanY;
         draw();
     }
 }
 
 async function applyInertia() {
     const MIN_VELOCITY = 0.2; // Minimum acceleration to apply
+    const controller = STATE.renderController;
 
     while (Math.abs(STATE.velocityX) > MIN_VELOCITY || Math.abs(STATE.velocityY) > MIN_VELOCITY) {
         if (STATE.mousedown) break;
         STATE.velocityX *= PANNING_INERTIA_FRICTION;
         STATE.velocityY *= PANNING_INERTIA_FRICTION;
 
-        STATE.panX += STATE.velocityX;
-        STATE.panY += STATE.velocityY;
+        controller.panX += STATE.velocityX;
+        controller.panY += STATE.velocityY;
         await draw();
     }
 }
 
 // Function to animate panX, panY and scale
 async function animatedPanTo(newPanX, newPanY, newScale = STATE.scale, duration = 800) {
-    const prevScale = STATE.scale;
-    const prevPanX = STATE.panX;
-    const prevPanY = STATE.panY;
+    const controller = STATE.renderController;
+    const prevScale = controller.scale;
+    const prevPanX = controller.panX;
+    const prevPanY = controller.panY;
     const deltaPanX = newPanX - prevPanX;
     const deltaPanY = newPanY - prevPanY;
     const deltaScale = newScale - prevScale;
@@ -1714,9 +2070,9 @@ async function animatedPanTo(newPanX, newPanY, newScale = STATE.scale, duration 
 
     const step = async t => {
         const factor = smoothStepFactor(t);
-        STATE.panX = prevPanX + factor * deltaPanX;
-        STATE.panY = prevPanY + factor * deltaPanY;
-        STATE.scale = prevScale + factor * deltaScale;
+        controller.scale = prevScale + factor * deltaScale;
+        controller.panX = prevPanX + factor * deltaPanX;
+        controller.panY = prevPanY + factor * deltaPanY;
         
         await draw();
     };
@@ -1747,7 +2103,12 @@ const inputsInit = [
                 spacingAnimationFrame = null;
                 if (STATE.ready) {
                     selectSpace(STATE.data, STATE.space);
-                    render();
+                    const scale = STATE.renderController.scale;
+                    STATE.data.forEach(d => {
+                        d.scaledX = d.x * scale;
+                        d.scaledY = d.y * scale;
+                    });
+                    STATE.renderController.render(true);
                     if (STATE.edges) updateGraph();
                 }
             });
@@ -1785,8 +2146,9 @@ const inputsInit = [
             const targetPanY = CANVAS_HEIGHT / 2 - y * STATE.scale - (height * STATE.scale) / 2;
             if (animate) animatedPanTo(targetPanX, targetPanY);
             else {
-                STATE.panX = targetPanX;
-                STATE.panY = targetPanY;
+                const controller = STATE.renderController;
+                controller.panX = targetPanX;
+                controller.panY = targetPanY;
                 draw();
             }
         },
@@ -1848,7 +2210,7 @@ function search() {
 
     STATE.matched = matched;
     STATE.notMatched = notMatched;
-    STATE.filter = filter;
+    STATE.renderController.filter = filter;
     draw();
 
     // Sort cards by proximity, for  more predictive navigation
@@ -1863,7 +2225,8 @@ function search() {
 }
 function gotoNextSearchResult(back = false, animate = true) {
     const dataNext = Number(searchGoToNextButton.getAttribute('data-next')) ?? 0;
-    const { filter, matched } = STATE;
+    const matched = STATE.matched;
+    const filter = STATE.renderController.filter;
     if (!filter || !matched.length) return;
     const next = back ? (dataNext - 2 < 0 ? matched.length - (2 - dataNext) : dataNext - 2) : dataNext;
     const { x, y, width, height } = matched[next % matched.length];
@@ -1873,9 +2236,10 @@ function gotoNextSearchResult(back = false, animate = true) {
     const targetPanY = CANVAS_HEIGHT / 2 - y * targetScale - (height * targetScale) / 2;
     if (animate) animatedPanTo(targetPanX, targetPanY, targetScale);
     else {
-        STATE.panX = targetPanX;
-        STATE.panY = targetPanY;
-        STATE.scale = targetScale;
+        const controller = STATE.renderController;
+        controller.scale = targetScale;
+        controller.panX = targetPanX;
+        controller.panY = targetPanY;
         draw();
     }
 }
@@ -2040,13 +2404,14 @@ function onMousedown(e) {
 function onMousemove(e) {
     const { clientX, clientY } = e.touches?.[0] ?? e;
 
-    if (STATE.mousedown) {
+    if (STATE.mousedown && STATE.ready) {
         if (STATE.mouseX !== clientX || STATE.mouseY !== clientY) {
+            const controller = STATE.renderController;
             const deltaX = clientX - STATE.mouseX;
             const deltaY = clientY - STATE.mouseY;
             STATE.mousemove = true;
-            STATE.panX += deltaX;
-            STATE.panY += deltaY;
+            controller.panX += deltaX;
+            controller.panY += deltaY;
 
             STATE.velocityX = deltaX;
             STATE.velocityY = deltaY;
@@ -2144,9 +2509,10 @@ function onTouchmove(e) {
         if (STATE.pinchDistance !== newPinchDistance) {
             if (!STATE.pinchDistance) STATE.pinchDistance = newPinchDistance;
 
-            const prevScale = STATE.scale;
-            const prevPanX = STATE.panX;
-            const prevPanY = STATE.panY;
+            const controller = STATE.renderController;
+            const prevScale = controller.scale;
+            const prevPanX = controller.panX;
+            const prevPanY = controller.panY;
 
             const zoom = newPinchDistance / STATE.pinchDistance;
             const newScale = Math.max(Math.min(prevScale * zoom, SCALE_MAX), SCALE_MIN);
@@ -2159,9 +2525,9 @@ function onTouchmove(e) {
             const newPanY = centerY - (centerY - prevPanY) * (newScale / prevScale);
 
             STATE.pinchDistance = newPinchDistance;
-            STATE.scale = newScale;
-            STATE.panX = newPanX;
-            STATE.panY = newPanY;
+            controller.scale = newScale;
+            controller.panX = newPanX;
+            controller.panY = newPanY;
             draw();
         }
     }
@@ -2170,10 +2536,11 @@ function onTouchmove(e) {
 function onWheel(e) {
     const mouseX = e.clientX;
     const mouseY = e.clientY;
+    const controller = STATE.renderController;
 
-    const prevScale = STATE.scale;
-    const prevPanX = STATE.panX;
-    const prevPanY = STATE.panY;
+    const prevScale = controller.scale;
+    const prevPanX = controller.panX;
+    const prevPanY = controller.panY;
 
     const wheel = e.deltaY < 0 ? 1 : -1;
     const zoom = Math.exp(wheel * SCALE_ZOOM_INTENSITY);
@@ -2184,9 +2551,9 @@ function onWheel(e) {
     const newPanX = mouseX - (mouseX - prevPanX) * (newScale / prevScale);
     const newPanY = mouseY - (mouseY - prevPanY) * (newScale / prevScale);
 
-    STATE.scale = newScale;
-    STATE.panX = newPanX;
-    STATE.panY = newPanY;
+    controller.scale = newScale;
+    controller.panX = newPanX;
+    controller.panY = newPanY;
     draw();
 }
 
@@ -2234,12 +2601,12 @@ function onDragleave(e) {
 }
 
 // touch
-cardsContainer.addEventListener('touchstart', onTouchstart);
+document.getElementById('image-cards').addEventListener('touchstart', onTouchstart);
 document.addEventListener('touchmove', onTouchmove, { passive: true });
 document.addEventListener('touchend', onMouseup);
 
 // mouse
-cardsContainer.addEventListener('mousedown', onMousedown);
+document.getElementById('image-cards').addEventListener('mousedown', onMousedown);
 document.addEventListener('mousemove', onMousemove, { passive: true });
 document.addEventListener('mouseup', onMouseup);
 
@@ -2258,8 +2625,8 @@ document.body.addEventListener('dragleave', onDragleave);
 
 
 // Clear all input fields (with Ctrl + S the browser saves their current contents)
-emptyAllInputs();
-statusElement.textContent = `Version from ${VERSION}`;
+ControlsController.emptyAllInputs();
+document.getElementById('cards-in-viewport').textContent = `Version from ${VERSION}`;
 
 // Start things 
 if (ISLOCAL) {
