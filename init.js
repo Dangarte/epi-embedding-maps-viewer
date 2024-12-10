@@ -1386,8 +1386,6 @@ async function selectData(id) {
     
     STATE.renderController.renderGraph(-1);
 
-    document.getElementById('data-list')?.parentElement?.removeAttribute('disabled');
-
     ControlsController.selectOptionInDataSwitcher(id);
 }
 
@@ -2616,7 +2614,7 @@ function onTouchmove(e) {
 }
 
 function onWheel(e) {
-    if (!STATE.ready) return;
+    if (!STATE.ready || !e.target.closest('#image-cards')) return;
 
     const mouseX = e.clientX;
     const mouseY = e.clientY;
@@ -2722,8 +2720,8 @@ if (ISLOCAL) {
 } else {
     fetch(INDEX_URL).then(response => response.json()).then(index => {
         index.forEach(item => INDEX.push(item));
-        const selectItemIndex = INDEX.findIndex(item => item.id === SELECTED_DATA_FROM_URL) ?? 0;
+        const selectItemIndex = INDEX.findIndex(item => item.id === SELECTED_DATA_FROM_URL);
         ControlsController.updateDataSwitcher();
-        selectData(selectItemIndex);
+        if (selectItemIndex !== -1) selectData(selectItemIndex);
     });
 }

@@ -116,10 +116,16 @@ input, select, a, button, code {
     top: .5em;
     right: .5em;
     width: min(600px, 80vw);
+    max-height: 90vh;
+    overflow-y: scroll;
     background-color: var(--controls-bg);
     border: 1px solid var(--controls-border);
     color: var(--controls-text);
     border-radius: var(--border-radius);
+}
+
+#data-list::-webkit-scrollbar {
+    width: 4px;
 }
 
 .data-option {
