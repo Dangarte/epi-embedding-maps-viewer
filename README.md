@@ -7,7 +7,7 @@ The main reason for creating this page was the desire to have a less laggy inter
 
 Creator of the original maps — [epiTune](https://civitai.com/user/epiTune).
 
-Last update: **`9.12.24`**
+Last update: **`10.12.24`**
 
 ## How to use?
 
@@ -58,12 +58,21 @@ In spaces you can:
     <summary>List of changes</summary>
     <ul>
         <li>
+            <h4>Update <code>10.12.24</code></h4>
+            <ul>
+                <li>More detailed status of loading</li>
+                <li>The list of maps available for display has been changed: tags, type, file size, number of nodes have been added</li>
+                <li>Slight reduction in memory consumption during rendering</li>
+                <li>Fixing several bugs</li>
+                <li>⚠ There are still a lot of remnants of the previous rendering system in the code</li>
+            </ul>
+        </li>
+        <li>
             <h4>Update <code>9.12.24</code></h4>
             <ul>
                 <li>Render functions have been partially rewritten (preparation for webgl2 render option)</li>
                 <li>More accurate and faster detection of cards in the viewport</li>
                 <li>Significant optimization of working with elements</li>
-                <li>⚠ There are still a lot of remnants of the previous rendering system in the code (for example, very suboptimal or now useless actions)</li>
             </ul>
         </li>
         <li>

@@ -107,6 +107,66 @@ input, select, a, button, code {
     100% { transform: translateX(-50%) scale(1.1) }
 }
 
+#data-list {
+    position: fixed;
+    display: grid;
+    /* grid-template-columns: 1fr 1fr; */
+    padding: 1em;
+    gap: 1em;
+    top: .5em;
+    right: .5em;
+    width: min(600px, 80vw);
+    background-color: var(--controls-bg);
+    border: 1px solid var(--controls-border);
+    color: var(--controls-text);
+    border-radius: var(--border-radius);
+}
+
+.data-option {
+    padding: .5em;
+    border-radius: var(--border-radius);
+    border: none;
+    background: none;
+    text-align: left;
+    border-left: 4px solid transparent;
+    cursor: pointer;
+}
+
+.data-option:not(.option-selected):hover {
+    border-color: var(--controls-border);
+}
+
+.option-title {
+    margin: .25em 0;
+}
+
+.option-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .5em;
+    line-height: 1;
+    text-transform: capitalize;
+}
+
+.option-tag {
+    padding: .25em .5em;
+    background-color: var(--button-bg);
+    border-radius: var(--border-radius);
+    white-space: nowrap;
+}
+
+.option-not-downloaded .option-title::after {
+    content: ' *';
+}
+
+.option-selected {
+    border-color: currentColor;
+}
+
+.hidden {
+    display: none;
+}
+
 #notify {
     position: fixed;
     z-index: 999;
@@ -159,7 +219,8 @@ input, select, a, button, code {
     width: fit-content;
 }
 
-.control-item select.control-btn,
+.control-item #data-list-selected,
+.control-item #switch-spaces,
 .control-item input[type="range"] {
     width: 50%;
     margin: 0;
@@ -391,6 +452,7 @@ body.alt-active .card-title {
     height: 2em;
     box-sizing: border-box;
     padding: .5em;
+    z-index: 0;
 }
 
 .button[disabled] {
