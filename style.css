@@ -95,16 +95,17 @@ input, select, a, button, code {
     user-select: none;
     pointer-events: none;
     line-height: 1.72em;
-    left: 50%;
+    font-weight: 200;
+    left: 0;
+    width: 100%;
     text-align: center;
     transform-origin: center;
-    transform: translateX(-50%);
     animation: loading 1s infinite ease-in-out alternate;
 }
 
 @keyframes loading {
-    0% { transform: translateX(-50%) scale(1) }
-    100% { transform: translateX(-50%) scale(1.1) }
+    0% { transform: scale(1) }
+    100% { transform: scale(1.1) }
 }
 
 #data-list {
@@ -140,6 +141,7 @@ input, select, a, button, code {
 
 .data-option:not(.option-selected):hover {
     border-color: var(--controls-border);
+    background-color: var(--button-bg);
 }
 
 .option-title {
@@ -167,6 +169,7 @@ input, select, a, button, code {
 
 .option-selected {
     border-color: currentColor;
+    background-color: var(--button-bg-hover);
 }
 
 .hidden {
@@ -396,6 +399,8 @@ input[type="range"]::-webkit-slider-runnable-thumb {
 
 .card-title {
     user-select: text;
+    line-height: var(--card-lineHeight);
+    margin: 0;
     margin-top: var(--card-padding);
 }
 
@@ -471,12 +476,6 @@ body.alt-active .card-title {
 
 .button:not([disabled]):hover {
     background-color: var(--card-btnBackgroundColorHover);
-}
-
-#image-cards p {
-    margin: 0;
-    line-height: var(--card-lineHeight);
-    min-height: calc(var(--card-textLines) * var(--card-lineHeight) * 1em);
 }
 
 .card-related-tags {

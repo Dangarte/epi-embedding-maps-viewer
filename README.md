@@ -7,7 +7,7 @@ The main reason for creating this page was the desire to have a less laggy inter
 
 Creator of the original maps — [epiTune](https://civitai.com/user/epiTune).
 
-Last update: **`10.12.24`**
+Last update: **`12.12.24`**
 
 ## How to use?
 
@@ -58,13 +58,19 @@ In spaces you can:
     <summary>List of changes</summary>
     <ul>
         <li>
+            <h4>Update <code>12.12.24</code></h4>
+            <ul>
+                <li>Added the ability to render cards using Canvas WebGL2, lightning fast, especially compared to Canvas 2d or HTML Elements render. But it uses VRAM even with hardware acceleration turned off 😥</li>
+                <li>⚠ WebGL2 does not yet highlight search matches</li>
+            </ul>
+        </li>
+        <li>
             <h4>Update <code>10.12.24</code></h4>
             <ul>
                 <li>More detailed status of loading</li>
                 <li>The list of maps available for display has been changed: tags, type, file size, number of nodes have been added</li>
                 <li>Slight reduction in memory consumption during rendering</li>
                 <li>Fixing several bugs</li>
-                <li>⚠ There are still a lot of remnants of the previous rendering system in the code</li>
             </ul>
         </li>
         <li>

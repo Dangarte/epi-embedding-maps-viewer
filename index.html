@@ -33,8 +33,7 @@
             </div>
             <div class="control-item" disabled>
                 <label for="switch-spaces">Switch spaces</label>
-                <select id="switch-spaces" class="control-btn">
-                </select>
+                <select id="switch-spaces" class="control-btn"></select>
             </div>
             <div class="control-item">
                 <button id="recenter-view" class="control-btn">🌀 Recenter view</button>
@@ -47,6 +46,10 @@
                 <div class="control-item">
                     <label for="scale-factor-coef">📏 Scale Coefficient</label>
                     <input id="scale-factor-coef" type="range"  step="1" min="30" max="80">
+                </div>
+                <div class="control-item">
+                    <label for="render-engine">Render engine</label>
+                    <select id="render-engine" class="control-btn"></select>
                 </div>
                 <!-- <div class="control-separator"></div> -->
                 <button id="upload-json" class="control-btn"><p>📄 Drag & Drop <code>.json</code> file with embedding map</p><input id="upload-json-input" type="file" accept="application/json" style="display: none;"></button>
