@@ -170,6 +170,7 @@ input, select, a, button, code {
 
 .option-title::after {
     background: none;
+    padding: 0
 }
 
 .option-not-downloaded .option-title::after {
@@ -190,10 +191,6 @@ input, select, a, button, code {
 .option-tag[data-tag="Imported"] {
     background-color: #0095ff;
     color: #c4e7ff;
-}
-
-.option-not-downloaded .option-title::after {
-    content: ' *';
 }
 
 .option-selected {
