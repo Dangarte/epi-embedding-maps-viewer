@@ -170,6 +170,10 @@ class ControlsController {
     }
 
     static updateDataSwitcher() {
+        const dataTypes = {
+            spaces: '🗃️ Space',
+            graphs: '🕸️ Graph'
+        };
         const fragment = new DocumentFragment();
         const nowTime = Date.now();
         INDEX.forEach((item, i) => {
@@ -179,12 +183,14 @@ class ControlsController {
 
             const tagsElement = insertElement('div', option, { class: 'option-tags' });
 
-            if (item.tags && Array.isArray(item.tags)) item.tags.forEach(tag => insertElement('div', tagsElement, { class: 'option-tag' }, tag));
-            if (item.nodesCount) insertElement('div', tagsElement, { class: 'option-tag' }, `(${item.nodesCount ?? 'NaN'})`);
-            if (item.fileSize) insertElement('div', tagsElement, { class: 'option-tag' }, filesizeToString(+item.fileSize));
+            if (item.tags && Array.isArray(item.tags)) item.tags.forEach(tag => insertElement('div', tagsElement, { class: 'option-tag', 'data-tag': tag }, tag));
+            if (item.type) insertElement('div', tagsElement, { class: 'option-tag' }, dataTypes[item.type] ?? item.type);
+            if (item.nodesCount) insertElement('div', tagsElement, { class: 'option-tag' }, `🧩 ${item.nodesCount ?? 'Unknown'}`);
+            if (item.fileSize) insertElement('div', tagsElement, { class: 'option-tag' }, `📦 ${filesizeToString(+item.fileSize)}`);
+            if (item.imported) insertElement('div', tagsElement, { class: 'option-tag', 'data-tag': 'Imported' }, '📄 Imported');
             if (item.changed) {
                 const changed = new Date(item.changed);
-                insertElement('div', tagsElement, { class: 'option-tag', title: changed.toLocaleString() }, timeAgo(Math.round((nowTime - +changed)/1000)));
+                insertElement('div', tagsElement, { class: 'option-tag', title: changed.toLocaleString() }, `🕒 ${timeAgo(Math.round((nowTime - +changed)/1000))}`);
             }
 
             this.dataListElements[i] = option;
@@ -2094,7 +2100,7 @@ async function importJsonFile(file) {
 
 
             dataIndex = INDEX.length;
-            INDEX.push({ id: key, title: key, type: dataType, data: newData, description: `Imported from file "${file.name}"`, fileSize: file.size, nodesCount: newData.proj.length, tags: [ 'Imported', dataType ], changed: Date.now() });
+            INDEX.push({ id: key, title: key, type: dataType, data: newData, description: `Imported from file "${file.name}"`, fileSize: file.size, nodesCount: newData.proj.length, changed: Date.now(), imported: true });
 
             ControlsController.updateDataSwitcher();
         } catch (err) {

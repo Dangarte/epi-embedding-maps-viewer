@@ -60,6 +60,7 @@ In spaces you can:
         <li>
             <h4>Update <code>12.12.24</code></h4>
             <ul>
+                <li>Added emoji to main tags (file size, modification time, number of nodes, map type), also improved the mark that data is not downloaded</li>
                 <li>Added the ability to render cards using Canvas WebGL2, lightning fast, especially compared to Canvas 2d or HTML Elements render. But it uses VRAM even with hardware acceleration turned off 😥</li>
                 <li>⚠ WebGL2 does not yet highlight search matches</li>
             </ul>

@@ -6,7 +6,7 @@
         "type": "spaces",
         "nodesCount": 1024,
         "fileSize": 14779442,
-        "tags": [ "Space", "General" ],
+        "tags": [  "General" ],
         "url": "https://dangarte.github.io/epi-embedding-maps-viewer/data/v1-tags-1024.json"
     },
     {
@@ -16,7 +16,7 @@
         "type": "spaces",
         "nodesCount": 2048,
         "fileSize": 29982187,
-        "tags": [ "Space", "General" ],
+        "tags": [  "General" ],
         "url": "https://dangarte.github.io/epi-embedding-maps-viewer/data/v1-tags-2048.json"
     },
     {
@@ -26,7 +26,7 @@
         "type": "spaces",
         "nodesCount": 1024,
         "fileSize": 14805204,
-        "tags": [ "Space", "Artists" ],
+        "tags": [  "Artists" ],
         "url": "https://dangarte.github.io/epi-embedding-maps-viewer/data/v1-artists-1024.json"
     },
     {
@@ -36,7 +36,7 @@
         "type": "spaces",
         "nodesCount": 1024,
         "fileSize": 14556129,
-        "tags": [ "Space", "Characters" ],
+        "tags": [  "Characters" ],
         "url": "https://dangarte.github.io/epi-embedding-maps-viewer/data/v1-chars-1024.json"
     },
     {
@@ -46,7 +46,7 @@
         "type": "spaces",
         "nodesCount": 1365,
         "fileSize": 12349173,
-        "tags": [ "Space", "Hair styles" ],
+        "tags": [  "Hair styles" ],
         "url": "https://dangarte.github.io/epi-embedding-maps-viewer/data/v1-hair-styles.json"
     },
     {
@@ -56,7 +56,7 @@
         "type": "spaces",
         "nodesCount": 2048,
         "fileSize": 33909128,
-        "tags": [ "Old", "Space", "Artists" ],
+        "tags": [ "Old", "Artists" ],
         "url": "https://dangarte.github.io/epi-embedding-maps-viewer/data/v0-artists-2048.json"
     },
     {
@@ -67,7 +67,7 @@
         "type": "spaces",
         "nodesCount": 8192,
         "fileSize": 98601249,
-        "tags": [ "Old", "Space", "Artists" ],
+        "tags": [ "Old", "Artists" ],
         "url": "https://dangarte.github.io/epi-embedding-maps-viewer/data/v0-artists-8192-webp-63.json"
     },
     {
@@ -77,7 +77,7 @@
         "type": "spaces",
         "nodesCount": 456,
         "fileSize": 7157592,
-        "tags": [ "Old", "Space", "Artists" ],
+        "tags": [ "Old", "Artists" ],
         "url": "https://dangarte.github.io/epi-embedding-maps-viewer/data/v0-artis-style.json"
     },
     {
@@ -87,7 +87,7 @@
         "type": "spaces",
         "nodesCount": 1024,
         "fileSize": 18007782,
-        "tags": [ "Old", "Space", "Characters" ],
+        "tags": [ "Old", "Characters" ],
         "url": "https://dangarte.github.io/epi-embedding-maps-viewer/data/v0-chars-1024.json"
     },
     {
@@ -97,7 +97,7 @@
         "type": "spaces",
         "nodesCount": 1024,
         "fileSize": 14550700,
-        "tags": [ "Old", "Space", "Characters" ],
+        "tags": [ "Old", "Characters" ],
         "url": "https://dangarte.github.io/epi-embedding-maps-viewer/data/v0-chars-1024-simplified.json"
     },
     {
@@ -107,7 +107,7 @@
         "type": "spaces",
         "nodesCount": 1365,
         "fileSize": 12144866,
-        "tags": [ "Old", "Space", "Hair styles" ],
+        "tags": [ "Old", "Hair styles" ],
         "url": "https://dangarte.github.io/epi-embedding-maps-viewer/data/v0-hair-styles.json"
     },
     {
@@ -117,7 +117,7 @@
         "type": "graphs",
         "nodesCount": 613,
         "fileSize": 33721244,
-        "tags": [ "Graph", "LLM Prompts" ],
+        "tags": [ "LLM Prompts" ],
         "url": "https://dangarte.github.io/epi-embedding-maps-viewer/data/graph-q5w959.json"
     },
     {
@@ -127,7 +127,7 @@
         "type": "graphs",
         "nodesCount": 85,
         "fileSize": 4131129,
-        "tags": [ "Graph", "Photoreal" ],
+        "tags": [ "Photoreal" ],
         "url": "https://dangarte.github.io/epi-embedding-maps-viewer/data/graph-ho82sz.json"
     },
     {
@@ -137,7 +137,7 @@
         "type": "spaces",
         "nodesCount": 27982,
         "fileSize": 2109013,
-        "tags": [ "Old", "Test", "Space", "Artists", "No Images" ],
+        "tags": [ "Old", "Test", "Artists", "No Images" ],
         "url": "https://dangarte.github.io/epi-embedding-maps-viewer/data/v00-test-no-images-27982.json"
     }
 ]

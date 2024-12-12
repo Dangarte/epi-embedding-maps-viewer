@@ -111,12 +111,12 @@ input, select, a, button, code {
 #data-list {
     position: fixed;
     display: grid;
-    /* grid-template-columns: 1fr 1fr; */
+    grid-template-columns: 1fr 1fr;
     padding: 1em;
-    gap: 1em;
+    gap: .5em;
     top: .5em;
     right: .5em;
-    width: min(600px, 80vw);
+    width: min(800px, 80vw);
     max-height: 90vh;
     overflow-y: scroll;
     background-color: var(--controls-bg);
@@ -146,6 +146,10 @@ input, select, a, button, code {
 
 .option-title {
     margin: .25em 0;
+    display: flex;
+    align-items: center;
+    gap: .5em;
+    line-height: 1.4em;
 }
 
 .option-tags {
@@ -156,11 +160,36 @@ input, select, a, button, code {
     text-transform: capitalize;
 }
 
+.option-title::after,
 .option-tag {
-    padding: .25em .5em;
+    padding: .25em .75em;
     background-color: var(--button-bg);
     border-radius: var(--border-radius);
     white-space: nowrap;
+}
+
+.option-title::after {
+    background: none;
+}
+
+.option-not-downloaded .option-title::after {
+    content: '📥';
+}
+
+.data-option:not(.option-not-downloaded) .option-title::after {
+    content: '✔';
+    color: #00b600;
+    text-shadow: 4px 2px #007900;
+}
+
+.option-tag[data-tag="Old"] {
+    background-color: #ff4900;
+    color: #ffcbb6;
+}
+
+.option-tag[data-tag="Imported"] {
+    background-color: #0095ff;
+    color: #c4e7ff;
 }
 
 .option-not-downloaded .option-title::after {
@@ -168,7 +197,8 @@ input, select, a, button, code {
 }
 
 .option-selected {
-    border-color: currentColor;
+    border-color: #0095ff;
+    box-shadow: inset 20px 0 20px -20px #0095ff;
     background-color: var(--button-bg-hover);
 }
 
