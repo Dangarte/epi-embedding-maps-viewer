@@ -31,11 +31,23 @@ body {
         --button-bg: #e3e3e3;
         --button-bg-hover: #c8e1ff;
     }
+
+    .card-related-tags {
+        text-shadow: 0 0 2px #fff;
+    }
 }
 
 [disabled] {
     pointer-events: none;
     user-select: none;
+}
+
+a[href]:not(.internal-link)::after {
+    content: '🡥';
+    font-size: .9em;
+    display: inline-block;
+    transform: translateY(-.25em);
+    margin-left: 4px;
 }
 
 input, select, a, button, code {
@@ -431,7 +443,7 @@ input[type="range"]::-webkit-slider-runnable-thumb {
     margin-top: var(--card-padding);
 }
 
-body.alt-active .card-title {
+body.alt-active #image-cards p {
     cursor: text;
 }
 
@@ -455,7 +467,7 @@ body.alt-active .card-title {
 
 #image-cards .image-placeholder,
 #image-cards img {
-    outline: var(--card-borderWidth) solid var(--card-borderColor);
+    /* outline: var(--card-borderWidth) solid var(--card-borderColor); */
     border-radius: calc(var(--card-borderRadius) - var(--card-padding));
     user-select: none;
     pointer-events: none;
@@ -477,6 +489,7 @@ body.alt-active .card-title {
     align-items: center;
     justify-content: flex-end;
     gap: .125em;
+    font-size: 1.5em;
     margin-top: var(--card-padding);
     transition: .1s ease-in-out;
 }
@@ -527,6 +540,69 @@ body.alt-active .card-title {
 
 .related-tag.related-tag-matched {
     display: inline;
+}
+
+.card-info-dialog {
+    position: absolute;
+    box-sizing: border-box;
+    transition: all 0s, outline-color .2s ease-in-out;
+    line-height: 0;
+    padding: var(--card-padding);
+    border-radius: var(--card-borderRadius);
+    background-color: var(--card-backgroundColor);
+    border: var(--card-borderWidth) solid var(--card-borderColor);
+    outline-offset: -1px;
+    outline: 0 solid transparent;
+    box-shadow: 0 4px 6px #0008;
+    z-index: 9998;
+    display: grid;
+    gap: var(--card-padding);
+    grid-template-columns: 1fr 60ch;
+    overflow: hidden;
+    transform-origin: center center;
+}
+
+.card-info-dialog:hover {
+    z-index: 9999;
+}
+
+.card-info {
+    line-height: 1.4;
+    user-select: text;
+    border-left: var(--card-borderWidth) solid var(--card-borderColor);
+    padding-left: var(--card-padding);
+}
+
+.card-info-dialog p {
+    pointer-events: all;
+}
+
+.card-info-dialog .card {
+    position: unset;
+    background: none;
+    border-color: transparent;
+    outline: none;
+    box-shadow: none;
+    pointer-events: none;
+}
+
+.card-info-field {
+    margin: 0;
+}
+
+.card-info-field-name {
+    color: var(--card-colorDim);
+}
+
+.card-info-field a {
+    word-break: break-all;
+    border-radius: .15em;
+    box-decoration-break: clone;
+    text-decoration: none;
+}
+
+.card-info-field a:hover {
+    background-color: var(--card-btnBackgroundColorHover);
 }
 
 body.loading #graph-svg,

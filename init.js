@@ -1,5 +1,5 @@
 // Version info
-const VERSION = '12.12.24'; // Last modified date
+const VERSION = '18.12.24'; // Last modified date
 
 // Online info
 const HOST = 'https://dangarte.github.io/epi-embedding-maps-viewer';
@@ -121,6 +121,7 @@ const STATE = {
     ready: false,
     renderController: null,
     data: [],
+    source: {},
     previewControllers: {},
     renderController: {},
     space: 0,
@@ -139,6 +140,202 @@ const STATE = {
 
 // Controller classes
 
+class DataController {
+    static supportedDataFormats = [ 'epi-space-v0', 'epi-space-v1', 'epi-graph-v1', 'dangart-v0' ];
+
+    static getDataFormat(data) {
+        if (Array.isArray(data)) return 'epi-space-v0';
+        if (data.dataFormat === 'dangart-v0') return 'dangart-v0';
+        if (Array.isArray(data.spaces) && Array.isArray(data.proj)) return 'epi-space-v1';
+        if (Array.isArray(data.edges) && Array.isArray(data.nodes)) return 'epi-graph-v1';
+        return 'unknown';
+    }
+
+    static getDataType(data) {
+        return Array.isArray(data.edges) ? 'graphs' : 'spaces';
+    }
+
+    static normalizeData(data) {
+        let dataFormat = this.getDataFormat(data);
+        if (dataFormat === 'unknown') throw new Error('Unknown data format');
+
+        // Convert data from old formats
+
+        if (dataFormat === 'epi-space-v0') {
+            dataFormat = 'epi-space-v1';
+            data = this.#convert__epi_space_v0_to_v1(data);
+        }
+
+        // Convert data to internal format
+
+        if (dataFormat === 'dangart-v0') return this.#convert_dangart_v0_to_normal(data);
+        if (dataFormat === 'epi-space-v1') return this.#convert__epi_space_v1_to_normal(data);
+        if (dataFormat === 'epi-graph-v1') return this.#convert__epi_graph_v1_to_noraml(data);
+    }
+
+    static #graph_layoutTree(nodesTree, nodesCount) {
+        const xGap = 500;
+        const yGap = 1000;
+        const lastRowHeight = Math.max(2, Math.ceil(nodesCount/200));
+
+        const nodePositions = new Map();
+        let currentX = 0;
+        let i = 0;
+
+        function placeNode(branch, depth) {
+            const y = depth * yGap;
+
+            if (branch.branches && branch.branches.length > 0) {
+                const childXPositions = branch.branches.map(child => placeNode(child, depth + 2));
+                let xMin = Infinity, xMax = -Infinity;
+                for (const xPos of childXPositions) {
+                    if (xPos < xMin) xMin = xPos;
+                    if (xPos > xMax) xMax = xPos;
+                }
+                const x = (xMin + xMax) / 2;
+                nodePositions.set(branch.id, { x, y });
+                return x;
+            } else {
+                i++;
+                const x = currentX;
+                nodePositions.set(branch.id, { x, y: y + (i%lastRowHeight) * yGap });
+                currentX += xGap;
+                return x;
+            }
+        }
+
+        for (const rootId in nodesTree) {
+            const rootBranches = nodesTree[rootId];
+            placeNode({ id: rootId, branches: rootBranches }, 0);
+        }
+
+        return nodePositions;
+    }
+
+    static #convert_dangart_v0_to_normal(data) {
+        data.nodes.forEach((node, i) => {
+            node.edges = [];
+            node.index = i;
+        });
+
+        // Find node indices for a graph
+        const nodesMap = new Map();
+        data.nodes.forEach(node => nodesMap.set(node.id, node));
+        data.edges.forEach((edge, i) => {
+            const nodeFrom = nodesMap.get(edge.from);
+            const nodeTo = nodesMap.get(edge.to);
+            if (!nodeFrom.edges.includes(i)) nodeFrom.edges.push(i);
+            if (!nodeTo.edges.includes(i)) nodeTo.edges.push(i);
+            edge.indexFrom = nodeFrom.index;
+            edge.indexTo = nodeTo.index;
+        });
+
+        return data;
+    }
+
+    static #convert__epi_graph_v1_to_noraml(data) {
+        const width = data.kv.width;
+        const height = data.kv.height;
+        const aspectRatio = width && height ? width / height : null;
+        const newData = {
+            dataFormat: 'normal',
+            nodes: data.nodes.map((node, i) => ({ id: node.id, title: node.prompt, index: i, image: node.image, imageAspectRatio: aspectRatio, spaces: [], edges: [] })),
+            spaces: [],
+            edges: data.edges,
+        };
+
+        // Find node indices for a graph
+        const nodesMap = new Map();
+        const nodesTree = {};
+        newData.nodes.forEach(node => nodesMap.set(node.id, node));
+        newData.edges.forEach((edge, i) => {
+            const nodeFrom = nodesMap.get(edge.from);
+            const nodeTo = nodesMap.get(edge.to);
+            if (!nodeFrom.edges.includes(i)) nodeFrom.edges.push(i);
+            if (!nodeTo.edges.includes(i)) nodeTo.edges.push(i);
+            edge.indexFrom = nodeFrom.index;
+            edge.indexTo = nodeTo.index;
+            if (nodesTree[edge.from]) nodesTree[edge.from].push({ id: edge.to });
+            else nodesTree[edge.from] = [{ id: edge.to }];
+        });
+
+        const hasParent = new Set();
+        Object.keys(nodesTree).forEach(branchId => {
+            const branches = nodesTree[branchId];
+            branches.forEach((branch, i) => {
+                if (!branch.branches && nodesTree[branch.id]) {
+                    branch.branches = nodesTree[branch.id];
+                    hasParent.add(branch.id);
+                }
+            });
+        });
+        Object.keys(nodesTree).forEach(branchId => {
+            if (hasParent.has(branchId)) delete nodesTree[branchId];
+        });
+
+        const treeLayout = this.#graph_layoutTree(nodesTree, newData.edges.length);
+
+        // Create spaces
+        newData.spaces = ['Tree', 'FCose Layout (placeholder)', 'Random'];
+        newData.nodes.forEach(node => {
+            // Tree
+            const treeSpace = treeLayout.get(node.id) ?? { x: 0, y: 0 };
+            node.spaces.push({ x: treeSpace.x, y: treeSpace.y, positionAbsolute: true });
+
+            // FCose Layout
+            // TODO
+            node.spaces.push({ x: Math.random() * CANVAS_WIDTH, y: Math.random() * CANVAS_HEIGHT });
+
+            // Random
+            node.spaces.push({ x: Math.random() * CANVAS_WIDTH, y: Math.random() * CANVAS_HEIGHT });
+        });
+
+        return newData;
+    }
+
+    static #convert__epi_space_v1_to_normal(data) {
+        const width = data.kv.width;
+        const height = data.kv.height;
+        const aspectRatio = width && height ? width / height : null;
+        const newData = {
+            dataFormat: 'normal',
+            nodes: data.proj.map((node, i) => ({ id: node.id, title: node.title, index: i, image: node.image, imageAspectRatio: aspectRatio, spaces: node.spaces })),
+            spaces: data.spaces,
+        };
+        const nodes = newData.nodes;
+        let hasDanbooruUrl = false;
+        data.proj.forEach((node, i) => {
+            if (node.kv?.danbooru_wiki_url) {
+                hasDanbooruUrl = true;
+                nodes[i].information = { danbooru: node.kv?.danbooru_wiki_url };
+            }
+        });
+
+        if (hasDanbooruUrl) newData.information = [ { id: 'danbooru', title: 'Danbooru', type: 'url' } ];
+
+        delete data.proj;
+
+        return newData;
+    }
+
+    static #convert__epi_space_v0_to_v1(data) {
+        const hasSecondSpace = data[0].x2 !== undefined && data[0].y2 !== undefined;
+        const newData = {
+            spaces: [
+                'Nomic Vision'
+            ],
+            kv: {
+                // resolution from old viewer
+                width: 256,
+                height: 256 * 1.46
+            },
+            proj: hasSecondSpace ? data.map(({ x, y, x2, y2, title, image }) => ({ image, title, spaces: [{ x, y }, { x: x2, y: y2 }] })) : data.map(({ x, y, title, image }) => ({ image, title, spaces: [{ x, y }] }))
+        };
+        if (hasSecondSpace) newData.spaces.push('SDLX Pooled Text Encoders');
+
+        return newData;
+    }
+}
 
 class ControlsController {
     static viewportStatusElement = document.getElementById('cards-in-viewport');
@@ -296,13 +493,14 @@ class CardsPreviewController {
         const borderWidth = CARD_STYLE.borderWidth * scale;
         const borderWidthX2 = borderWidth * 2;
         const borderRadius = Math.round(CARD_STYLE.borderRadius * scale);
-        const borderRadiusInside = borderRadius - padding;
+        const borderRadiusInside = borderRadius > padding ? borderRadius - padding : 0;
         const hasReference = Boolean(referenceController);
         const { cellWidth, cellHeight, layers } = this.grid;
         const contentOffset = padding + borderWidth;
         const lineHeight = fontSize * CARD_STYLE.lineHeight;
         const controls = [ ICON_BOOK.cloneNode(true), ICON_COPY.cloneNode(true) ];
-        const controlsWidth = controls.length * fontSize + (controls.length - 1) * fontSize * .125;
+        const controlsFontSize = 1.5 * fontSize;
+        const controlsWidth = controls.length * controlsFontSize + (controls.length - 1) * controlsFontSize * .125;
         const fontString = `normal ${fontSize}px ${CARD_STYLE.font}`;
         let ctx, gridSizeX, gridSizeY, layerMaxCards, currentLayerIndex = 0, cardOffsetY = 0;
         const referenceLayers = hasReference ? referenceController.grid.layers : null;
@@ -342,19 +540,41 @@ class CardsPreviewController {
         let controlsTemplate = null;
         const cardTemplates = {};
         if (!hasReference) {
-            controlsTemplate = new OffscreenCanvas(controlsWidth, fontSize);
+            const iconCssText = `font-size: ${fontSize}; stroke: ${CARD_STYLE.color}; height: 1em; width: 1em; line-height: 1em; stroke-width: .1em; fill: none; stroke-linecap: round; stroke-linejoin: round;`;
+            const svgIconToImage = icon => {
+                const use = icon.querySelector('use');
+                const symbol = use ? document.getElementById(use.getAttribute('href').slice(1)) : null;
+                if (symbol) {
+                    const fragment = new DocumentFragment();
+                    Array.from(symbol.children).forEach(node => fragment.appendChild(node.cloneNode(true)));
+                    icon.setAttribute('viewBox', symbol.getAttribute('viewBox'));
+                    use.replaceWith(fragment);
+                }
+                icon.style.cssText = iconCssText;
+                const serializer = new XMLSerializer();
+                const svgString = serializer.serializeToString(icon);
+                const svgDataUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svgString)}`;
+                return base64ToImage(svgDataUrl);
+            };
+            controlsTemplate = new OffscreenCanvas(controlsWidth, controlsFontSize);
             const templateCtx = controlsTemplate.getContext('2d', { alpha: true });
             templateCtx.imageSmoothingEnabled = CANVAS_SMOOTHING;
             templateCtx.imageSmoothingQuality = CANVAS_SMOOTHING_QUALITY;
 
             templateCtx.fillStyle = CARD_STYLE.btnBackgroundColor;
 
-            controls.forEach((icon, i) => {
-                const x = i * 1.125 * fontSize;
-                templateCtx.roundRect(x, 0, fontSize, fontSize, borderRadiusInside);
-                // templateCtx.drawImage(icon, x + fontSize4, fontSize4, fontSize2, fontSize2); // Canvas can't render svg... I'm too lazy to fix it now
+            const fontSize4 = controlsFontSize/4;
+            const fontSize2 = controlsFontSize/2;
+            const controlIcons = await Promise.all(controls.map(svgIconToImage));
+
+            for (let i = 0; i < controls.length; i++) {
+                const x = i * 1.125 * controlsFontSize;
+                templateCtx.roundRect(x, 0, controlsFontSize, controlsFontSize, borderRadiusInside);
                 templateCtx.fill();
-            });
+                templateCtx.beginPath();
+                templateCtx.drawImage(controlIcons[i], x + fontSize4, fontSize4, fontSize2, fontSize2);
+                controlIcons[i] = null;
+            }
 
             const TEMPLATE_MIN_COUNT = 200;
             STATE.renderController.sizes.forEach(item => {
@@ -383,7 +603,7 @@ class CardsPreviewController {
 
                 templateCtx.translate(padding, padding);
 
-                if (borderWidth) templateCtx.stroke(getRoundedRectPath(imageWidth + borderWidthX2, imageHeight + borderWidthX2, borderRadiusInside, -borderWidth, -borderWidth));
+                // if (borderWidth) templateCtx.stroke(getRoundedRectPath(imageWidth + borderWidthX2, imageHeight + borderWidthX2, borderRadiusInside, -borderWidth, -borderWidth));
 
                 templateCtx.drawImage(controlsTemplate, scaledWidth - contentOffset * 2 - controlsWidth, scaledHeight - contentOffset * 2 - fontSize);
 
@@ -443,9 +663,9 @@ class CardsPreviewController {
 
                     ctx.translate(padding, padding);
 
-                    ctx.drawImage(controlsTemplate, scaledWidth - contentOffset * 2 - controlsWidth, scaledHeight - contentOffset * 2 - fontSize);
+                    ctx.drawImage(controlsTemplate, scaledWidth - contentOffset * 2 - controlsWidth, scaledHeight - contentOffset * 2 - controlsFontSize);
 
-                    if (borderWidth) ctx.stroke(getRoundedRectPath(imageWidth + borderWidthX2, imageHeight + borderWidthX2, borderRadiusInside, -borderWidth, -borderWidth));
+                    // if (borderWidth) ctx.stroke(getRoundedRectPath(imageWidth + borderWidthX2, imageHeight + borderWidthX2, borderRadiusInside, -borderWidth, -borderWidth));
 
                     ctx.clip(getRoundedRectPath(imageWidth, imageHeight, borderRadiusInside));
                     if (image) ctx.drawImage(image, 0, 0, imageWidth, imageHeight);
@@ -489,6 +709,7 @@ class CardsPhysicController {
     gridSizeX;
     gridSizeY;
     gridLarge;
+    gridLargeKeys;
     gridLargeScale;
     pointWidth;
     pointHeight;
@@ -525,6 +746,7 @@ class CardsPhysicController {
 
     fillLargeGrid() {
         this.gridLarge = {};
+        this.gridLargeKeys = { rowKeys: [], rows: {}, columnKeys: [], columns: {} };
         this.gridLargeScale = 7;
         const gridLarge = this.gridLarge;
         const cellLargeSizeX = this.gridSizeX * this.gridLargeScale;
@@ -551,6 +773,21 @@ class CardsPhysicController {
                 cellLarge2.add(i);
             }
         });
+
+        this.gridLargeKeys.rowKeys = Object.keys(gridLarge).map(k => +k).sort((a, b) => a - b);
+        this.gridLargeKeys.rowKeys.forEach(key => this.gridLargeKeys.rows[key] = Object.keys(gridLarge[key]).map(k => +k).sort((a, b) => a - b));
+        this.gridLargeKeys.columnKeys = [];
+        this.gridLargeKeys.columns = {};
+        this.gridLargeKeys.rowKeys.forEach(rowKey => {
+            this.gridLargeKeys.rows[rowKey].forEach(colKey => {
+                if (!this.gridLargeKeys.columns[colKey]) {
+                    this.gridLargeKeys.columns[colKey] = [];
+                    this.gridLargeKeys.columnKeys.push(colKey);
+                }
+                this.gridLargeKeys.columns[colKey].push(rowKey);
+            });
+        });
+        this.gridLargeKeys.columnKeys.sort((a, b) => a - b);
     }
 
     async overlapFix() {
@@ -742,9 +979,13 @@ class RenderController {
 
     #panX = 0;
     #panY = 0;
-    #renderedProperty = { panX: null, panY: null, scale: null };
-
     #scale = SCALE_BASE;
+    #renderedPanX = null;
+    #renderedPanY = null;
+    #renderedScale = null;
+    #renderedFilter = null;
+    #renderedCards = [];
+    #cssProperty = { panX: null, panY: null, scale: null };
     #scaleCached = {};
 
     #filter = '';
@@ -754,7 +995,7 @@ class RenderController {
 
     #viewportWidth = 0;
     #viewportHeight = 0;
-    #skipRender;
+    #cardsInViewport;
     #visibleCardsCount = 0;
 
     #cssSetCardsTransform = false;
@@ -771,7 +1012,7 @@ class RenderController {
 
         this.#renderEngine = renderEngine;
         this.data = data;
-        this.cards = data.proj;
+        this.cards = data.nodes;
         if (data.edges) {
             this.edges = data.edges;
             const nodesMap = new Map();
@@ -899,6 +1140,12 @@ class RenderController {
 
         if (this.#scale > CARD_SCALE_PREVIEW) this.#render_DOM();
         else this.#render_preview();
+
+        this.#renderedPanX = this.#panX;
+        this.#renderedPanY = this.#panY;
+        this.#renderedScale = this.#scale;
+        this.#renderedFilter = this.#filter;
+        this.#renderedCards = this.#cardsInViewport;
     }
 
     renderGraph(node = null) {
@@ -989,20 +1236,21 @@ class RenderController {
     }
 
     updateProperty(force = false) {
+        const cssProperty = this.#cssProperty;
         let somethingIsChanged = false;
-        if (force || this.#renderedProperty.scale !== this.#scale) {
+        if (force || cssProperty.scale !== this.#scale) {
             document.body.style.setProperty('--scale', this.#scale);
             this.#scaleChanged();
-            this.#renderedProperty.scale = this.#scale;
+            cssProperty.scale = this.#scale;
             somethingIsChanged = true;
             this.#cssSetCardsTransform = this.#renderEngine === 'dom' || this.#scale > CARD_SCALE_PREVIEW;
         }
-        if (force || this.#renderedProperty.panX !== this.#panX) {
-            this.#renderedProperty.panX = this.#panX;
+        if (force || cssProperty.panX !== this.#panX) {
+            cssProperty.panX = this.#panX;
             somethingIsChanged = true;
         }
-        if (force || this.#renderedProperty.panY !== this.#panY) {
-            this.#renderedProperty.panY = this.#panY;
+        if (force || cssProperty.panY !== this.#panY) {
+            cssProperty.panY = this.#panY;
             somethingIsChanged = true;
         }
         if (somethingIsChanged) {
@@ -1018,6 +1266,8 @@ class RenderController {
 
     coordinatesChanged() {
         this.#render_coordinatesChanged?.();
+
+        this.cards.forEach(d => d.boundaries = null);
     }
 
     switchSapce(newSpaceIndex) {
@@ -1071,12 +1321,13 @@ class RenderController {
         if (this.#imagesDecoded) return;
 
         const promises = [];
-        const { width, height } = this.data.kv ?? {};
-        const aspectRatio = width / height;
         const data = this.cards;
-        data.forEach(info => typeof info.image === 'string' ? promises.push(base64ToImage(info.image)) : null);
-        const images = await Promise.all(promises);
-        images.forEach((image, index) => {
+        data.forEach((info, i) => info.image && typeof info.image === 'string' ? promises.push({ index: i, promise: base64ToImage(info.image) }) : null);
+        const images = await Promise.all(promises.map(item => item.promise));
+        images.forEach((image, i) => {
+            const index = promises[i].index;
+            const aspectRatio = data[index].imageAspectRatio;
+            delete data[index].imageAspectRatio;
             image.width = image.naturalWidth;
             image.height = aspectRatio ? Math.round(image.width / aspectRatio) : image.naturalHeight;
             data[index].image = image;
@@ -1089,10 +1340,10 @@ class RenderController {
         if (this.#cardsSizesReady) return;
 
         const data = this.cards;
-        const image = data[0].image ?? { width: 256, height: 256 };
+        const image = data[0].image || { width: 256, height: 256 };
         const padding = CARD_STYLE.padding + CARD_STYLE.borderWidth;
         const additionalWidth = padding * 2;
-        const additionalHeight = padding * 4 + CARD_STYLE.fontSize; // padding * 2 + controls margin-top + text margin-top
+        const additionalHeight = padding * 4 + CARD_STYLE.fontSize * 1.5; // padding * 2 + controls margin-top + text margin-top // 1.5 - controls font-size
         const lineHeight = CARD_STYLE.fontSize * CARD_STYLE.lineHeight;
 
         const measuringCanvas = new OffscreenCanvas(image.width, image.height);
@@ -1152,8 +1403,8 @@ class RenderController {
         };
 
         data.forEach(item => {
-            const { image = {}, title } = item;
-            const { width: w = 256, height: h = 256 } = image;
+            const { image, title } = item;
+            const { width: w = 256, height: h = 256 } = image || {};
             const lines = item.lines ?? prepareLines(title, w);
             item.lines = lines;
             item.width = Math.round(w + additionalWidth);
@@ -1261,47 +1512,61 @@ class RenderController {
         const vsX = -panX / scale;
         const veX = vsX + this.#viewportWidth / scale;
 
-        const skipRender = this.#skipRender = new Uint8Array(data.length).fill(1);
+        const cardsInViewport = this.#cardsInViewport = new Uint8Array(data.length).fill(0);
 
         const physics = STATE.physics;
         const vg = physics.gridLarge;
+        const vgKeys = physics.gridLargeKeys;
         const vgSizeX = physics.gridSizeX * physics.gridLargeScale;
         const vgSizeY = physics.gridSizeY * physics.gridLargeScale;
-        const fvgStartX = Math.floor(vsX / vgSizeX);
-        const fvgEndX = Math.ceil(veX / vgSizeX);
-        const fvgStartY = Math.floor(vsY / vgSizeY);
-        const fvgEndY = Math.ceil(veY / vgSizeY);
-        const vgStartX = fvgStartX - 1;
-        const vgEndX = fvgEndX;
-        const vgStartY = fvgStartY - 1;
-        const vgEndY = fvgEndY;
+        const minFullX = Math.floor(vsX / vgSizeX);
+        const minFullY = Math.floor(vsY / vgSizeY);
+        const maxFullX = Math.floor(veX / vgSizeX);
+        const maxFullY = Math.floor(veY / vgSizeY);
+        const minX = minFullX - 1;
+        const minY = minFullY - 1;
+        const maxX = maxFullX;
+        const maxY = maxFullY;
 
-        // TODO: Check only changed cells ?
+        const checkCell = cell => {
+            cell.forEach(index => {
+                const b = data[index].boundaries ?? this.#calculateCardBoundaries(data[index]);
+                if (veX > b[0] && veY > b[1] && vsX < b[2] && vsY < b[3]) cardsInViewport[index] = 1;
+            });
+        };
 
-        for (const rowKey in vg) {
-            const rowX = +rowKey;
-            if (rowX < vgStartX || rowX > vgEndX) continue;
-
+        for (const rowX of vgKeys.rowKeys) {
+            if (rowX < minX) continue;
+            if (rowX > maxX) break;
             const row = vg[rowX];
-            const isRowFullyInViewport = rowX > fvgStartX && rowX < fvgEndX;
+            const keys = vgKeys.rows[rowX];
 
-            for (const cellKey in row) {
-                const cellY = +cellKey;
-                if (cellY < vgStartY || cellY > vgEndY) continue;
+            if (rowX > minFullX && rowX < maxFullX) {
+                for (const cellY of keys) {
+                    if (cellY < minY) continue;
+                    if (cellY > maxY) break;
 
-                if (isRowFullyInViewport && cellY > fvgStartY && cellY < fvgEndY) row[cellY].forEach(index => skipRender[index] = 0);
-                else row[cellY].forEach(index => {
-                    const d = data[index];
-                    if (veX > d.x && veY > d.y && vsX < d.x + d.width && vsY < d.y + d.height) skipRender[index] = 0;
-                });
+                    if (cellY > minFullY && cellY < maxFullY) row[cellY].forEach(index => cardsInViewport[index] = 2);
+                    else checkCell(row[cellY]);
+                }
+            } else {
+                for (const cellY of keys) {
+                    if (cellY < minY) continue;
+                    if (cellY > maxY) break;
+
+                    checkCell(row[cellY]);
+                }
             }
         }
 
-        let visibleCardsCount = 0;
-        skipRender.forEach(skip => skip === 1 ? null : visibleCardsCount++);
-        this.#visibleCardsCount = visibleCardsCount;
-        ControlsController.visibleCardsCount = visibleCardsCount;
+        this.#visibleCardsCount = cardsInViewport.reduce((count, inViewport) => inViewport !== 0 ? count + 1 : count, 0);
+        ControlsController.visibleCardsCount = this.#visibleCardsCount;
         ControlsController.updateViewportStatus();
+    }
+
+    #calculateCardBoundaries(d) {
+        d.boundaries = [ d.x, d.y , d.x + d.width, d.y + d.height ];
+        return d.boundaries;
     }
 
     #search() {
@@ -1338,12 +1603,12 @@ class RenderController {
     #render_DOM() {
         const filter = this.#filter;
         const data = this.cards;
-        const skipRender = this.#skipRender;
+        const cardsInViewport = this.#cardsInViewport;
 
         let isMatched = false;
 
         const moveElement = d => {
-            if (skipRender[d.index] === 1) {
+            if (!cardsInViewport[d.index]) {
                 if (d.cardElement?.inDOM) this.#r_DOM_removeCard(d.cardElement);
                 return;
             }
@@ -1438,7 +1703,7 @@ class RenderController {
         const cards = this.cards;
         const scale = this.#scale;
         const ctx = this.ctx;
-        const skipRender = this.#skipRender;
+        const cardsInViewport = this.#cardsInViewport;
 
         ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
         ctx.translate(this.#panX, this.#panY);
@@ -1453,7 +1718,7 @@ class RenderController {
             d.scaledTo = scale;
         };
         const drawMatchedCard = d => {
-            if (skipRender[d.index] === 1) return;
+            if (!cardsInViewport[d.index]) return;
 
             if (d.scaledTo !== scale) calculateCardScale(d);
 
@@ -1465,7 +1730,7 @@ class RenderController {
             else ctx.stroke(getRoundedRectPath(scaled[2], scaled[3], borderRadius, scaled[0], scaled[1]));
         };
         const drawMatchedOutline = d => {
-            if (skipRender[d.index] === 1) return;
+            if (!cardsInViewport[d.index]) return;
 
             if (d.scaledTo !== scale) calculateCardScale(d);
 
@@ -1475,7 +1740,7 @@ class RenderController {
             else ctx.fill(getRoundedRectPath(scaled[2] + outlineWidth, scaled[3] + outlineWidth, borderRadius, scaled[0] - outlineWidthHalf, scaled[1] - outlineWidthHalf));
         };
         const drawCard = d => {
-            if (skipRender[d.index] === 1) return;
+            if (!cardsInViewport[d.index]) return;
 
             if (d.scaledTo !== scale) calculateCardScale(d);
 
@@ -1541,14 +1806,14 @@ class RenderController {
         const scale = this.#scale;
         const gl = this.ctx;
         const program = this.#r_WebGL2_program;
-        const skipRender = this.#skipRender;
+        const cardsInViewport = this.#cardsInViewport;
 
         gl.clear(gl.COLOR_BUFFER_BIT);
 
         const texturesToDraw = [];
         this.#r_WebGL2_textures.forEach(texture => texturesToDraw.push({ cards: [], texture }));
 
-        cards.forEach(d => skipRender[d.index] === 0 ? texturesToDraw[d.texLayer].cards.push(d) : null);
+        cards.forEach(d => cardsInViewport[d.index] ? texturesToDraw[d.texLayer].cards.push(d) : null);
 
         const panLocation = gl.getUniformLocation(program, 'u_pan');
         const scaleLocation = gl.getUniformLocation(program, 'u_scale');
@@ -1657,7 +1922,7 @@ class RenderController {
         out vec2 v_texCoord;
 
         void main() {
-            gl_Position = vec4(vec2((a_position.x * u_scale + u_pan.x) * 2.0 - 1.0, 1.0 - (a_position.y * u_scale + u_pan.y) * 2.0), 0.0, 1.0);
+            gl_Position = vec4((a_position.x * u_scale + u_pan.x) * 2.0 - 1.0, 1.0 - (a_position.y * u_scale + u_pan.y) * 2.0, 0.0, 1.0);
             v_texCoord = a_texCoord;
         }
         `;
@@ -1782,7 +2047,8 @@ async function selectData(id) {
     // Load data from file
     await setLoadingStatus(INDEX[id].fileSize ? `Loading data (${filesizeToString(INDEX[id].fileSize)})` : 'Loading data');
     const data = INDEX[id].data ?? await fetchData(id);
-    STATE.data = data.proj;
+    STATE.source = data;
+    STATE.data = data.nodes;
     console.log(`${loaderPrefix} %c${key}%c: `, cCode, '', data);
 
     // Process each item in list
@@ -1791,10 +2057,10 @@ async function selectData(id) {
         d.id = d.id ?? `card-${index}`;
         d.titleLowerCase = d.title.toLowerCase();
 
-        // TODO: Will need to be replaced with real related tags later (when the creator adds them)
-        d.relatedTags = [
-            // { title: d.id, searchText: d.id },
-        ];
+        if (d.relatedTags) d.relatedTags = d.relatedTags.map(tag => {
+            if (typeof tag === 'string') return { title: tag, searchText: tag.toLowerCase() };
+            return tag;
+        }); else d.relatedTags = [];
     });
 
 
@@ -1840,7 +2106,6 @@ async function selectData(id) {
 
     await setLoadingStatus('Initializing the render controller');
     await STATE.renderController.init();
-    STATE.renderController.coordinatesChanged();
 
     console.timeEnd(loadingStatus);
     loading.remove();
@@ -2035,16 +2300,9 @@ async function switchEmb(embIndex, animate = true) {
 async function fetchData(id) {
     if (!INDEX[id]?.url) throw new Error('No download link');
     const json = await fetch(INDEX[id].url).then(response => response.json());
-    let newData = json;
-
-    // Convert to current format
-    if (Array.isArray(json)) newData = convertOldDataToNewFormat(json, INDEX[id].id);
-    else if (Array.isArray(json.edges) && Array.isArray(json.nodes)) newData = convertGraphToNormal(json);
-
-    // TODO Checking the format (are all the required fields present)
-
-    INDEX[id].data = newData;
-    return newData;
+    const data = DataController.normalizeData(json);
+    INDEX[id].data = data;
+    return data;
 }
 
 async function importJsonFile(file) {
@@ -2075,32 +2333,11 @@ async function importJsonFile(file) {
 
             const text = await fileToText(file);
             const json = JSON.parse(text);
-            let newData = json;
-
-            if (Array.isArray(json)) {
-                // spaces old
-                dataType = 'spaces';
-                newData = convertOldDataToNewFormat(json, key);
-            }
-            else if (json.name && Array.isArray(json.spaces) && json.kv && Array.isArray(json.proj)) {
-                // spaces
-                dataType = 'spaces';
-                const spacesCount = json.spaces.length;
-                if (json.proj.some(d => !d.title || !d.image || d.spaces.length < spacesCount)) {
-                    throw new Error('Wrong file structure (wrong proj list)');
-                }
-            } else if (json.name && Array.isArray(json.edges) && Array.isArray(json.nodes)) {
-                // graphs
-                dataType = 'graphs';
-                newData = convertGraphToNormal(json);
-            }
-            else {
-                throw new Error('Wrong file structure');
-            }
-
+            const data = DataController.normalizeData(json);
+            dataType = DataController.getDataType(data);
 
             dataIndex = INDEX.length;
-            INDEX.push({ id: key, title: key, type: dataType, data: newData, description: `Imported from file "${file.name}"`, fileSize: file.size, nodesCount: newData.proj.length, changed: Date.now(), imported: true });
+            INDEX.push({ id: key, title: key, type: dataType, data: data, description: `Imported from file "${file.name}"`, fileSize: file.size, nodesCount: data.nodes.length, changed: Date.now(), imported: true });
 
             ControlsController.updateDataSwitcher();
         } catch (err) {
@@ -2239,117 +2476,6 @@ function sortByProximity(points) {
     return sorted;
 }
 
-// Convert old data to new format
-function convertOldDataToNewFormat(data, name) {
-    const hasSecondSpace = data[0].x2 !== undefined && data[0].y2 !== undefined;
-    const newData = {
-        name: name ?? `[OLD] unknown (${data.length})`,
-        spaces: [
-            'Nomic Vision'
-        ],
-        kv: {
-            // resolution from old viewer
-            width: 256,
-            height: 256 * 1.46
-        },
-        proj: hasSecondSpace ? data.map(({ x, y, x2, y2, title, image }) => ({ image, title, spaces: [{ x, y }, { x: x2, y: y2 }] })) : data.map(({ x, y, title, image }) => ({ image, title, spaces: [{ x, y }] }))
-    };
-    if (hasSecondSpace) newData.spaces.push('SDLX Pooled Text Encoders');
-    return newData;
-}
-
-function convertGraphToNormal(data) {
-    data.proj = data.nodes.map((node, i) => ({ id: node.id, title: node.prompt, index: i, image: node.image, edges: [], spaces: [] }));
-    delete data.nodes;
-
-    // Find node indices for a graph
-    const nodesMap = new Map();
-    const nodesTree = {};
-    data.proj.forEach(node => nodesMap.set(node.id, node));
-    data.edges.forEach((edge, i) => {
-        const nodeFrom = nodesMap.get(edge.from);
-        const nodeTo = nodesMap.get(edge.to);
-        if (!nodeFrom.edges.includes(i)) nodeFrom.edges.push(i);
-        if (!nodeTo.edges.includes(i)) nodeTo.edges.push(i);
-        edge.indexFrom = nodeFrom.index;
-        edge.indexTo = nodeTo.index;
-        if (nodesTree[edge.from]) nodesTree[edge.from].push({ id: edge.to });
-        else nodesTree[edge.from] = [{ id: edge.to }];
-    });
-
-    const hasParent = new Set();
-    Object.keys(nodesTree).forEach(branchId => {
-        const branches = nodesTree[branchId];
-        branches.forEach((branch, i) => {
-            if (!branch.branches && nodesTree[branch.id]) {
-                branch.branches = nodesTree[branch.id];
-                hasParent.add(branch.id);
-            }
-        });
-    });
-    Object.keys(nodesTree).forEach(branchId => {
-        if (hasParent.has(branchId)) delete nodesTree[branchId];
-    });
-
-    const treeLayout = layoutTree(nodesTree, data.edges.length);
-
-    // Create spaces
-    data.spaces = ['Tree', 'FCose Layout (placeholder)', 'Random'];
-    data.proj.forEach(node => {
-        // Tree
-        const treeSpace = treeLayout.get(node.id) ?? { x: 0, y: 0 };
-        node.spaces.push({ x: treeSpace.x, y: treeSpace.y, positionAbsolute: true });
-
-        // FCose Layout
-        // TODO
-        node.spaces.push({ x: Math.random() * CANVAS_WIDTH, y: Math.random() * CANVAS_HEIGHT });
-
-        // Random
-        node.spaces.push({ x: Math.random() * CANVAS_WIDTH, y: Math.random() * CANVAS_HEIGHT });
-    });
-
-    return data;
-
-    function layoutTree(nodesTree, nodesCount) {
-        const xGap = 500;
-        const yGap = 1000;
-        const lastRowHeight = Math.max(2, Math.ceil(nodesCount/200));
-
-        const nodePositions = new Map();
-        let currentX = 0;
-        let i = 0;
-
-        function placeNode(branch, depth) {
-            const y = depth * yGap;
-
-            if (branch.branches && branch.branches.length > 0) {
-                const childXPositions = branch.branches.map(child => placeNode(child, depth + 2));
-                let xMin = Infinity, xMax = -Infinity;
-                for (const xPos of childXPositions) {
-                    if (xPos < xMin) xMin = xPos;
-                    if (xPos > xMax) xMax = xPos;
-                }
-                const x = (xMin + xMax) / 2;
-                nodePositions.set(branch.id, { x, y });
-                return x;
-            } else {
-                i++;
-                const x = currentX;
-                nodePositions.set(branch.id, { x, y: y + (i%lastRowHeight) * yGap });
-                currentX += xGap;
-                return x;
-            }
-        }
-
-        for (const rootId in nodesTree) {
-            const rootBranches = nodesTree[rootId];
-            placeNode({ id: rootId, branches: rootBranches }, 0);
-        }
-
-        return nodePositions;
-    }
-}
-
 
 // Functions for render data
 
@@ -2375,7 +2501,7 @@ function createCardElement(d) {
     const p = insertElement('p', card, { class: 'card-title' }, d.title);
     const controls = insertElement('div', card, { class: 'buttons' });
     
-    if (d.kv?.danbooru_wiki_url) insertElement('div', controls, { class: 'button', 'data-id': 'wiki' }).appendChild(ICON_BOOK.cloneNode(true));
+    if (d.information) insertElement('div', controls, { class: 'button', 'data-id': 'info' }).appendChild(ICON_BOOK.cloneNode(true));
     else insertElement('div', controls, { class: 'button', 'disabled': '' }).appendChild(ICON_BOOK.cloneNode(true));
     
     insertElement('div', controls, { class: 'button', 'data-id': 'copy' }).appendChild(ICON_COPY.cloneNode(true));
@@ -2384,6 +2510,29 @@ function createCardElement(d) {
     const searchList = d.relatedTags.map(item => insertElement('span', searchPopup, { class: 'related-tag' }, item.title));
 
     return { element: card, titleElement: p, searchList };
+}
+
+function createCardInfoElement(d, infoFields) {
+    const cardInfoElement = createElement('div', { class: 'card-info-dialog', 'data-id': d.id });
+    const card = insertElement('div', cardInfoElement, { class: 'card', style: `width: ${d.width}px;` });
+    if (d.image) card.appendChild(d.image.cloneNode(true));
+    else insertElement('div', card, { class: 'image-placeholder' }, 'no-image');
+    const p = insertElement('p', card, { class: 'card-title' }, d.title);
+    const cardInfoList = insertElement('div', cardInfoElement, { class: 'card-info' });
+    const dInformation = d.information ?? {};
+    infoFields.forEach(field => {
+        if (!dInformation[field.id]) return;
+        const fieldElement = insertElement('p', cardInfoList, { class: 'card-info-field' });
+        if (field.type === 'title') {
+            insertElement('h3', fieldElement, { class: 'card-info-field-title' }, dInformation[field.id]);
+        } else {
+            if (field.title) insertElement('span', fieldElement, { class: 'card-info-field-name' }, `${field.title}: `);
+            if (field.type === 'url') insertElement('a', fieldElement, { class: 'card-info-field-value', href: dInformation[field.id] }, dInformation[field.id]);
+            else insertElement('span', fieldElement, { class: 'card-info-field-value' }, dInformation[field.id]);
+        }
+    });
+
+    return cardInfoElement;
 }
 
 // Path for image rounded corners
@@ -2441,6 +2590,7 @@ const inputsInit = [
     { id: 'scale-factor-coef', eventName: 'input',
         value: STATE.spacing,
         callback: e => {
+            closeAllCardInfoDialog();
             STATE.spacing = e.target.valueAsNumber;
             if (!spacingAnimationFrame) spacingAnimationFrame = requestAnimationFrame(() => {
                 spacingAnimationFrame = null;
@@ -2457,10 +2607,14 @@ const inputsInit = [
         callback: e => STATE.renderController.recenterView(e.ctrlKey ? 0 : undefined)
     },
     { id: 'switch-spaces', eventName: 'change',
-        callback: e => switchEmb(Number(e.target.value))
+        callback: e => {
+            closeAllCardInfoDialog();
+            switchEmb(Number(e.target.value));
+        }
     },
     { id: 'search', eventName: 'input',
         callback: () => {
+            closeAllCardInfoDialog();
             STATE.renderController.filter = ControlsController.searchInputElement.value.trim().toLowerCase();
             draw();
         }
@@ -2470,6 +2624,7 @@ const inputsInit = [
     },
     { id: 'search-clear', eventName: 'click',
         callback: () => {
+            closeAllCardInfoDialog();
             ControlsController.searchInputElement.value = '';
             STATE.renderController.filter = '';
             draw();
@@ -2477,6 +2632,7 @@ const inputsInit = [
     },
     { id: 'data-list', eventName: 'click',
         callback: e => {
+            closeAllCardInfoDialog();
             const id = e.target.closest('.data-option[data-id]')?.getAttribute('data-id') ?? null;
             ControlsController.dataListElement.classList.toggle('hidden');
             if (id !== null) selectData(Number(id));
@@ -2484,12 +2640,14 @@ const inputsInit = [
     },
     { id: 'data-list-selected', eventName: 'click',
         callback: e => {
+            closeAllCardInfoDialog();
             ControlsController.dataListElement.classList.toggle('hidden');
         }
     },
     { id: 'random',eventName: 'click',
         callback: e => {
             if (!STATE.ready) return;
+            closeAllCardInfoDialog();
 
             const animate = !e.ctrlKey;
             const controller = STATE.renderController;
@@ -2515,6 +2673,7 @@ const inputsInit = [
     { id: 'overlap-fix', eventName: 'click',
         callback: e => {
             if (!STATE.ready) return;
+            closeAllCardInfoDialog();
             STATE.physics.overlapFix();
         }
     },
@@ -2530,6 +2689,7 @@ const inputsInit = [
     },
     { id: 'upload-json', eventName: 'click',
         callback: () => {
+            closeAllCardInfoDialog();
             const fileInput = document.getElementById('upload-json-input');
             fileInput.files.length = 0;
             fileInput.click();
@@ -2537,6 +2697,7 @@ const inputsInit = [
     },
     { id: 'upload-json-input', eventName: 'change',
         callback: () => {
+            closeAllCardInfoDialog();
             const fileInput = document.getElementById('upload-json-input');
             const file = fileInput.files[0];
             if (file && file.type === 'application/json') importJsonFile(file);
@@ -2735,14 +2896,56 @@ function clearSelection() {
 // Events
 
 
+function closeAllCardInfoDialog() {
+    const elements = document.querySelectorAll('.card-info-dialog');
+    if (!elements.length) return;
+    if (document.startViewTransition) {
+        const easing = 'ease-in-out';
+        const duration = 200;
+        const animationInfo = Array.from(elements).map((el, i) => {
+            const id = `card-info-dialog-${i}`;
+            el.style.viewTransitionName = id;
+            return { el, scaleStart: el.getAttribute('data-scale-start'), id };
+        });
+        const transition = document.startViewTransition(() => elements.forEach(el => el.style.display = 'none'));
+        transition.ready.then(() => {
+            for (const item of animationInfo) {
+                document.documentElement.animate( { transform: [ 'scale(1,1)', item.scaleStart ] }, { pseudoElement: `::view-transition-old(${item.id})`, duration, easing } );
+            }
+        });
+        transition.finished.then(() => elements.forEach(el => el.remove()));
+    } else elements.forEach(el => el.remove());
+}
+
 function onCardClick(e, id) {
     const d = STATE.data.find(d => d.id === id);
     if (!d) return;
 
     const buttonId = e.target?.closest('.button[data-id]')?.getAttribute('data-id') ?? null;
-    if (buttonId === 'wiki') {
-        const wikiUrl = d.kv?.danbooru_wiki_url;
-        if (wikiUrl) toClipboard(wikiUrl);
+    if (buttonId === 'info') {
+        if (document.querySelector(`.card-info-dialog[data-id="${d.id}"]`)) return;
+
+        const scale = STATE.renderController.scale;
+        const cardElement = e.target.closest('.card');
+        const cardInfoElement = createCardInfoElement(d, STATE.source.information);
+        cardsContainer.appendChild(cardInfoElement);
+        const dialogSize = cardInfoElement.getBoundingClientRect();
+        const cardSize = cardElement.getBoundingClientRect();
+        const cardInfoPosition = { left: d.x + d.width/2 - (dialogSize.width/scale)/2, top: d.y + d.height/2 - (dialogSize.height/scale)/2 };
+        cardInfoElement.style.top = `${cardInfoPosition.top}px`;
+        cardInfoElement.style.left = `${cardInfoPosition.left}px`;
+        if (document.startViewTransition) {
+            cardInfoElement.style.display = 'none';
+            const easing = 'ease-in-out';
+            const duration = 200;
+            const scaleStart = `scale(${cardSize.width/dialogSize.width},${cardSize.height/dialogSize.height})`;
+            cardInfoElement.style.viewTransitionName = 'card-info-dialog';
+            cardInfoElement.setAttribute('data-scale-start', scaleStart);
+
+            const transition = document.startViewTransition(() => cardInfoElement.style.display = '');
+            transition.ready.then(() => document.documentElement.animate( { transform: [ scaleStart, 'scale(1,1)' ] }, { pseudoElement: "::view-transition-new(card-info-dialog)", duration, easing } ));
+            transition.finished.then(() => cardInfoElement.style.viewTransitionName = '');
+        }
 
         return;
     }
@@ -2763,7 +2966,7 @@ function onMousedown(e) {
 
     if (e.button === 0 || e.touches) {
         // Ignore movement when clicking on text
-        if (!e.altKey || !e.target.closest('.card-title')) {
+        if ((!e.altKey || !e.target.closest('p')) && (!e.target.closest('a'))) {
             e.preventDefault();
             const { clientX, clientY } = e.touches?.[0] ?? e;
             STATE.mousedown = true;
@@ -2818,6 +3021,10 @@ function onMouseup(e) {
             const elementId = e.target.closest('.card')?.getAttribute('data-id') ?? null;
             if (elementId !== null) onCardClick(e, elementId);
             else {
+                // Information close
+                if (!e.target.closest('.card-info-dialog')) closeAllCardInfoDialog();
+
+                // Graph change
                 let canvasCardIndex = null;
                 const { panX, panY, scale } = STATE.renderController;
                 const { clientX, clientY } = e.touches?.[0] ?? e;

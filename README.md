@@ -7,7 +7,7 @@ The main reason for creating this page was the desire to have a less laggy inter
 
 Creator of the original maps — [epiTune](https://civitai.com/user/epiTune).
 
-Last update: **`12.12.24`**
+Last update: **`18.12.24`**
 
 ## How to use?
 
@@ -57,6 +57,18 @@ In spaces you can:
 <details>
     <summary>List of changes</summary>
     <ul>
+        <li>
+            <h4>Update <code>18.12.24</code></h4>
+            <ul>
+                <li>Button icons are now displayed in the preview.</li>
+                <li>Minor optimization of card calculation in the viewport.</li>
+                <li>Fixed loading of outdated scripts and styles from the browser cache by the browser.</li>
+                <li>Improved version control of data for display.</li>
+                <li>Slightly increased the size of buttons on cards.</li>
+                <li>The information button now opens additional information instead of copying the link to Danbooru.</li>
+                <li>Added file to test all features.</li>
+            </ul>
+        </li>
         <li>
             <h4>Update <code>12.12.24</code></h4>
             <ul>
