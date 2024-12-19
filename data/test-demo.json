@@ -7,6 +7,7 @@
         { "id": "character", "title": "Character", "type": "title" },
         { "id": "anime", "title": "Anime" },
         { "id": "gender", "title": "Gender" },
+        { "id": "species", "title": "Species" },
         { "id": "fandom", "title": "Fandom", "type": "url" },
         { "id": "danbooru", "title": "Danbooru", "type": "url" }
     ],
@@ -36,10 +37,11 @@
         {
             "id": "frieren",
             "title": "frieren",
-            "relatedTags": [ "sousou_no_frieren" ],
+            "relatedTags": [ "sousou_no_frieren", "female", "elf", "grey_hair", "green_eyes" ],
             "information": {
                 "character": "Frieren",
                 "gender": "Female",
+                "species": "Elf",
                 "anime": "Frieren: Beyond Journey's End",
                 "fandom": "https://frieren.fandom.com/wiki/Frieren",
                 "danbooru": "https://danbooru.donmai.us/wiki_pages/frieren"
@@ -50,10 +52,11 @@
         {
             "id": "himmel_(sousou_no_frieren)",
             "title": "himmel_(sousou_no_frieren)",
-            "relatedTags": [],
+            "relatedTags": [ "sousou_no_frieren", "male", "human", "blue_eyes", "blue_hair" ],
             "information": {
                 "character": "Himmel",
                 "gender": "Male",
+                "species": "Human",
                 "anime": "Frieren: Beyond Journey's End",
                 "fandom": "https://frieren.fandom.com/wiki/Himmel",
                 "danbooru": "https://danbooru.donmai.us/wiki_pages/himmel_(sousou_no_frieren)"
@@ -64,10 +67,11 @@
         {
             "id": "fern_(sousou_no_frieren)",
             "title": "fern_(sousou_no_frieren)",
-            "relatedTags": [],
+            "relatedTags": [ "sousou_no_frieren", "female", "human", "purple_eyes", "purple_hair" ],
             "information": {
                 "character": "Fern",
                 "gender": "Female",
+                "species": "Human",
                 "anime": "Frieren: Beyond Journey's End",
                 "fandom": "https://frieren.fandom.com/wiki/Fern",
                 "danbooru": "https://danbooru.donmai.us/wiki_pages/fern_(sousou_no_frieren)"
@@ -78,10 +82,11 @@
         {
             "id": "stark_(sousou_no_frieren)",
             "title": "stark_(sousou_no_frieren)",
-            "relatedTags": [],
+            "relatedTags": [ "sousou_no_frieren", "male", "human", "orange_eyes", "red_hair" ],
             "information": {
                 "character": "Stark",
                 "gender": "Male",
+                "species": "Human",
                 "anime": "Frieren: Beyond Journey's End",
                 "fandom": "https://frieren.fandom.com/wiki/Stark",
                 "danbooru": "https://danbooru.donmai.us/wiki_pages/stark_(sousou_no_frieren)"
@@ -92,10 +97,11 @@
         {
             "id": "flamme_(sousou_no_frieren)",
             "title": "flamme_(sousou_no_frieren)",
-            "relatedTags": [],
+            "relatedTags": [ "sousou_no_frieren", "female", "human", "blue_eyes", "green_eyes", "orange_hair" ],
             "information": {
                 "character": "Flamme",
                 "gender": "Female",
+                "species": "Human",
                 "anime": "Frieren: Beyond Journey's End",
                 "fandom": "https://frieren.fandom.com/wiki/Flamme",
                 "danbooru": "https://danbooru.donmai.us/wiki_pages/flamme_(sousou_no_frieren)"
@@ -106,10 +112,11 @@
         {
             "id": "linie_(sousou_no_frieren)",
             "title": "linie_(sousou_no_frieren)",
-            "relatedTags": [],
+            "relatedTags": [ "sousou_no_frieren", "female", "demon", "purple_eyes", "pink_hair" ],
             "information": {
                 "character": "Linie",
                 "gender": "Female",
+                "species": "Demon",
                 "anime": "Frieren: Beyond Journey's End",
                 "fandom": "https://frieren.fandom.com/wiki/Linie",
                 "danbooru": "https://danbooru.donmai.us/wiki_pages/linie_(sousou_no_frieren)"
@@ -120,10 +127,11 @@
         {
             "id": "lawine_(sousou_no_frieren)",
             "title": "lawine_(sousou_no_frieren)",
-            "relatedTags": [],
+            "relatedTags": [ "sousou_no_frieren", "female", "human", "blue_eyes", "grey_hair" ],
             "information": {
                 "character": "Lawine",
                 "gender": "Female",
+                "species": "Human",
                 "anime": "Frieren: Beyond Journey's End",
                 "fandom": "https://frieren.fandom.com/wiki/Lawine",
                 "danbooru": "https://danbooru.donmai.us/wiki_pages/lawine_(sousou_no_frieren)"
@@ -134,10 +142,11 @@
         {
             "id": "ubel_(sousou_no_frieren)",
             "title": "ubel_(sousou_no_frieren)",
-            "relatedTags": [],
+            "relatedTags": [ "sousou_no_frieren", "female", "human", "purple_eyes", "green_hair" ],
             "information": {
                 "character": "Übel",
                 "gender": "Female",
+                "species": "Human",
                 "anime": "Frieren: Beyond Journey's End",
                 "fandom": "https://frieren.fandom.com/wiki/%C3%9Cbel",
                 "danbooru": "https://danbooru.donmai.us/wiki_pages/ubel_(sousou_no_frieren)"

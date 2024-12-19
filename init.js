@@ -1,5 +1,5 @@
 // Version info
-const VERSION = '18.12.24'; // Last modified date
+const VERSION = '19.12.24'; // Last modified date
 
 // Online info
 const HOST = 'https://dangarte.github.io/epi-embedding-maps-viewer';
@@ -346,6 +346,7 @@ class ControlsController {
     static dataListSelectedElement = document.getElementById('data-list-selected');
     static spacesListElement = document.getElementById('switch-spaces');
     static renderEngineListElement = document.getElementById('render-engine');
+    static uploadJsonInput = document.getElementById('upload-json-input');
     static dataListElements = [];
 
     static #visibleCardsCount = 0;
@@ -448,8 +449,9 @@ class CardsPreviewController {
         this.scale = scale;
 
         // List of maximum canvas sizes in browsers: https://jhildenbiddle.github.io/canvas-size/#/?id=test-results
-        const maxHeight = 16384;
-        const maxWidth = 16384;
+        const canvasScaleMultiplyer = .5; // Temporary solution to the problem with VRAM consumption spike and browser crash when generating preview
+        const maxHeight = 16384 * canvasScaleMultiplyer;
+        const maxWidth = 16384 * canvasScaleMultiplyer;
 
         this.data = data;
         const cardsCount = data.length;
@@ -989,6 +991,8 @@ class RenderController {
     #scaleCached = {};
 
     #filter = '';
+    #filterRegex = null;
+    #filterCheckString = null;
     #cardsMatched = [];
     #cardsNotMatched = [];
     #searchTimer = null;
@@ -1571,20 +1575,28 @@ class RenderController {
 
     #search() {
         ControlsController.searchGoToElement.setAttribute('data-next', 0);
-        
-        const filter = this.#filter;
-        const matched = [];
-        const notMatched = [];
-        if (filter) this.cards.forEach(d => (d.titleLowerCase.includes(filter) || d.relatedTags.some(item => item.searchText.includes(filter)) ? matched : notMatched).push(d));
-        ControlsController.searchClearElement.style.visibility = filter ? 'visible' : 'hidden';
-        ControlsController.searchGoToElement.setAttribute('data-count', matched.length);
 
-        if (filter) {
+        if (this.#filter) {
+            const filter = this.#filter;
+            const matched = [];
+            const notMatched = [];
+
+            const { check, matchRegex } = createRegexSearch(filter, {caseInsensitive: true });
+            this.#filterCheckString = check;
+            this.#filterRegex = matchRegex;
+
+            this.cards.forEach(d => (check(d.title) || d.relatedTags.some(item => check(item.title)) ? matched : notMatched).push(d));
+            ControlsController.searchClearElement.style.visibility = 'visible';
+            ControlsController.searchGoToElement.setAttribute('data-count', matched.length);
             this.#cardsMatched = matched;
             this.#cardsNotMatched = notMatched;
         } else {
+            this.#filterCheckString = null;
+            this.#filterRegex = null;
             this.#cardsMatched = [];
             this.#cardsNotMatched = [...this.cards];
+            ControlsController.searchClearElement.style.visibility = 'hidden';
+            ControlsController.searchGoToElement.setAttribute('data-count', 0);
         }
 
         // Sort cards by proximity, for  more predictive navigation
@@ -1650,31 +1662,29 @@ class RenderController {
     }
 
     #r_DOM_updateCardFilter(cardElement, filter) {
-        const { searchInfo } = cardElement;
         cardElement.filter = filter;
 
-        const processString = (element, string, lowerString) => {
-            const indexStart = lowerString.indexOf(filter);
-            const indexEnd = indexStart + filter.length;
-            const selectionPrefix = string.substring(0, indexStart);
-            const selectionContent = string.substring(indexStart, indexEnd);
-            const selectionEnd = string.substring(indexEnd);
-            
-            const fragment = new DocumentFragment();
-            if (selectionPrefix) fragment.appendChild(document.createTextNode(selectionPrefix));
-            fragment.appendChild(createElement('mark', undefined, selectionContent));
-            if (selectionEnd) fragment.appendChild(document.createTextNode(selectionEnd));
-            element.textContent = '';
-            element.appendChild(fragment);
-        };
+        if (cardElement.matched) {
+            const check = this.#filterCheckString;
+            const matchRegex = this.#filterRegex;
 
-        searchInfo.forEach(item => {
-            const { title, searchText, element } = item;
-            const isMatched = filter && searchText.includes(filter);
-            if (isMatched) processString(element, title, searchText);
-            else element.textContent = title;
-            element.classList.toggle('related-tag-matched', isMatched);
-        });
+            const processString = (element, string) => {
+                element.textContent = '';
+                element.appendChild(highlightMatches(string, matchRegex));
+            };
+
+            cardElement.searchInfo.forEach(item => {
+                const isMatched = check(item.title);
+                if (isMatched) processString(item.element, item.title);
+                else item.element.textContent = item.title;
+                item.element.classList.toggle('related-tag-matched', isMatched);
+            });
+        } else {
+            cardElement.searchInfo.forEach(item => {
+                item.element.textContent = item.title;
+                item.element.classList.toggle('related-tag-matched', false);
+            });
+        }
     }
 
     #r_DOM_toggleCardMatched(cardElement, isMatched) {
@@ -2035,7 +2045,7 @@ async function selectData(id) {
     await setLoadingStatus('Unloading data');
     STATE.renderController?.destroy?.();
     STATE.previewControllers = {};
-    const keysToClear = [...CARD_PREVIEW_SCALING.map(i => i.id), 'cardElement', 'titleLowerCase', 'index' ];
+    const keysToClear = [...CARD_PREVIEW_SCALING.map(i => i.id), 'cardElement', 'index' ];
     STATE.data.forEach(d => keysToClear.forEach(key => d[key] !== undefined ? delete d[key] : null));
     delete STATE.maxCardWidth;
     delete STATE.maxCardHeight;
@@ -2055,10 +2065,9 @@ async function selectData(id) {
     STATE.data.forEach((d, index) => {
         d.index = index;
         d.id = d.id ?? `card-${index}`;
-        d.titleLowerCase = d.title.toLowerCase();
 
         if (d.relatedTags) d.relatedTags = d.relatedTags.map(tag => {
-            if (typeof tag === 'string') return { title: tag, searchText: tag.toLowerCase() };
+            if (typeof tag === 'string') return { title: tag };
             return tag;
         }); else d.relatedTags = [];
     });
@@ -2527,10 +2536,16 @@ function createCardInfoElement(d, infoFields) {
             insertElement('h3', fieldElement, { class: 'card-info-field-title' }, dInformation[field.id]);
         } else {
             if (field.title) insertElement('span', fieldElement, { class: 'card-info-field-name' }, `${field.title}: `);
-            if (field.type === 'url') insertElement('a', fieldElement, { class: 'card-info-field-value', href: dInformation[field.id] }, dInformation[field.id]);
+            if (field.type === 'url') insertElement('a', fieldElement, { class: 'card-info-field-value', href: dInformation[field.id] }, dInformation[field.id].replace('https://', ''));
             else insertElement('span', fieldElement, { class: 'card-info-field-value' }, dInformation[field.id]);
         }
     });
+    if (d.relatedTags) {
+        const relatedTagsElement = insertElement('p', cardInfoList, { class: 'card-info-related-tags' });
+        d.relatedTags.forEach(tag => {
+            insertElement('code', relatedTagsElement, { class: 'card-info-related-tag', 'data-tag': tag.title }, tag.title);
+        });
+    }
 
     return cardInfoElement;
 }
@@ -2655,7 +2670,7 @@ const inputsInit = [
             const card = STATE.data[Math.floor(Math.random()*STATE.data.length)];
 
             ControlsController.searchInputElement.value = card.title;
-            controller.filter = card.title.toLowerCase();
+            controller.filter = card.title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
             const targetPanX = CANVAS_WIDTH / 2 - card.x * scale - (card.width * scale) / 2;
             const targetPanY = CANVAS_HEIGHT / 2 - card.y * scale - (card.height * scale) / 2;
@@ -2755,6 +2770,37 @@ function addNotify(text, duration = 2000) {
 
 
 // Basic functions
+
+
+function createRegexSearch(filter, { caseInsensitive = false } = {}) {
+    if (!filter) return { check: () => false, matchRegex: /(?:)/ };
+
+    let pattern = filter;
+
+    try {
+        const flags = 'g' + (caseInsensitive ? 'i' : '');
+        const matchRegex = new RegExp(pattern, flags);
+        const check = text => matchRegex.test(text);
+        return { check, matchRegex };
+    } catch (_) {
+        return { check: () => false, matchRegex: /(?:)/ };
+    }
+}
+
+function highlightMatches(text, matchRegex) {
+    const fragment = new DocumentFragment();
+    let lastIndex = 0;
+    
+    text.replace(matchRegex, (match, offset) => {
+        if (offset > lastIndex) fragment.appendChild(document.createTextNode(text.slice(lastIndex, offset)));
+        fragment.appendChild(createElement('mark', undefined, match));
+        lastIndex = offset + match.length;
+    });
+    
+    if (lastIndex < text.length) fragment.appendChild(document.createTextNode(text.slice(lastIndex)));
+
+    return fragment;
+}
 
 function filesizeToString(size) {
     // 1 B = 0.0009765625 KB
@@ -3020,9 +3066,9 @@ function onMouseup(e) {
         if (STATE.ready && !STATE.mousemove && !STATE.isZooming && (e.button === 0 || isTouch) && e.target.closest('#image-cards')) {
             const elementId = e.target.closest('.card')?.getAttribute('data-id') ?? null;
             if (elementId !== null) onCardClick(e, elementId);
-            else {
+            else if (e.target.id === 'image-cards') {
                 // Information close
-                if (!e.target.closest('.card-info-dialog')) closeAllCardInfoDialog();
+                closeAllCardInfoDialog();
 
                 // Graph change
                 let canvasCardIndex = null;
@@ -3148,13 +3194,13 @@ function onKeydown(e) {
     // Set focus to search input instead of default page search
     if (e.ctrlKey && e.code === 'KeyF') {
         e.preventDefault();
-        searchInput.focus();
+        ControlsController.searchInputElement.focus();
     }
 
     // Open json file via shortcut
     if (e.ctrlKey && e.code === 'KeyO') {
         e.preventDefault();
-        document.getElementById('upload-json-input').click();
+        ControlsController.uploadJsonInput.click();
     }
 }
 
@@ -3221,7 +3267,7 @@ cardsContainer.textContent = '';
 if (ISLOCAL) {
     addNotify('🏠 Local mode', 8000);
     console.log('🏠 Local mode\nℹ️ Index loading was skipped because the page was opened from a file');
-    document.getElementById('toggle-advanced-settings')?.click();
+    // document.getElementById('toggle-advanced-settings')?.click();
 } else {
     fetch(INDEX_URL).then(response => response.json()).then(index => {
         index.forEach(item => INDEX.push(item));

@@ -458,6 +458,7 @@ body.alt-active #image-cards p {
 
 .related-tag mark,
 .card-title mark {
+    display: inline-block;
     color: currentColor;
     background-color: color-mix(in oklab, var(--card-matchedColor), transparent 80%);
     box-shadow: inset 0 0 3px var(--card-matchedColor);
@@ -598,11 +599,25 @@ body.alt-active #image-cards p {
     word-break: break-all;
     border-radius: .15em;
     box-decoration-break: clone;
-    text-decoration: none;
+    text-decoration: underline var(--card-colorDim);
 }
 
 .card-info-field a:hover {
     background-color: var(--card-btnBackgroundColorHover);
+    text-decoration: none;
+}
+
+.card-info-related-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .4em;
+}
+
+.card-info-related-tag {
+    background-color: var(--card-btnBackgroundColor);
+    border-radius: .15em;
+    padding: 0 .5em;
+    box-decoration-break: clone;
 }
 
 body.loading #graph-svg,
