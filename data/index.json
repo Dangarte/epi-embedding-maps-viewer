@@ -174,10 +174,10 @@
         "title": "[TEST] Testing available features",
         "author": "Dangart",
         "description": "File for testing different features",
-        "changed": "2024-12-19T14:00:00Z",
+        "changed": "2024-12-20T14:00:00Z",
         "type": "graphs",
-        "nodesCount": 9,
-        "fileSize": 389226,
+        "nodesCount": 15,
+        "fileSize": 591523,
         "dataFormat": "dangart-v0",
         "tags": [ "Demo", "Test" ],
         "url": "https://dangarte.github.io/epi-embedding-maps-viewer/data/test-demo.json"
