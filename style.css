@@ -37,6 +37,13 @@ body {
     }
 }
 
+@media (prefers-reduced-motion: reduce) {
+    * {
+        animation: none !important;
+        transition-duration: 0s !important;
+    }
+}
+
 [disabled] {
     pointer-events: none;
     user-select: none;
@@ -428,6 +435,7 @@ input[type="range"]::-webkit-slider-runnable-thumb {
     outline: 0 solid transparent;
     box-shadow: 0 4px 6px #0008;
     z-index: 0;
+    contain: layout style paint;
 }
 
 .card.card-matched {
@@ -659,6 +667,10 @@ body.hovering-drop.correct-drop #drop-box {
 body.hovering-drop.incorrect-drop #drop-box {
     --color: #b63a00;
 }
+
+/* .emoji {
+    filter: grayscale(1);
+} */
 
 .icon {
     height: 1em;

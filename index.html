@@ -23,37 +23,37 @@
         
         <div id="controls" class="controls-group">
             <div class="control-item">
-                <input id="search" placeholder="🔎 Search" autocomplete="off">
+                <input id="search" placeholder="Search..." autocomplete="off">
                 <button id="search-clear" class="control-btn" style="visibility: hidden;">x</button>
                 <button id="goto-search" class="control-btn" data-next="0" data-count="0">▶</button>
             </div>
             <div class="control-item">
-                <label for="data-list-selected">Select embedding</label>
+                <label for="data-list-selected"><span class="emoji">🧠</span> Select embedding</label>
                 <button id="data-list-selected" class="control-btn">...</button>
                 <div id="data-list" class="hidden">no-data</div>
             </div>
             <div class="control-item" disabled>
-                <label for="switch-spaces">Switch spaces</label>
+                <label for="switch-spaces"><span class="emoji">🌌</span> Switch spaces</label>
                 <select id="switch-spaces" class="control-btn"></select>
             </div>
             <div class="control-item">
-                <button id="recenter-view" class="control-btn">🌀 Recenter view</button>
-                <button id="overlap-fix" class="control-btn">🀄️ Overlap fix</button>
-                <button id="random" class="control-btn">🎲 Random</button>
+                <button id="recenter-view" class="control-btn"><span class="emoji">🌀</span> Recenter view</button>
+                <button id="overlap-fix" class="control-btn"><span class="emoji">🀄️</span> Overlap fix</button>
+                <button id="random" class="control-btn"><span class="emoji">🎲</span> Random</button>
             </div>
             <div class="control-separator"></div>
-            <button id="toggle-advanced-settings" class="control-btn" data-toggle-text="⚙️ Show advanced settings|⚙️ Hide advanced settings">⚙️ Show advanced settings</button>
+            <button id="toggle-advanced-settings" class="control-btn" data-toggle-text="Show advanced settings|Hide advanced settings"><span class="emoji">⚙️</span> <span>Show advanced settings</span></button>
             <div id="advanced-settings-group" class="controls-group hidden">
                 <div class="control-item">
-                    <label for="scale-factor-coef">📏 Scale Coefficient</label>
+                    <label for="scale-factor-coef"><span class="emoji">📏</span> Scale Coefficient</label>
                     <input id="scale-factor-coef" type="range"  step="1" min="30" max="80">
                 </div>
                 <div class="control-item">
-                    <label for="render-engine">Render engine</label>
+                    <label for="render-engine"><span class="emoji">🚀</span> Render engine</label>
                     <select id="render-engine" class="control-btn"></select>
                 </div>
                 <!-- <div class="control-separator"></div> -->
-                <button id="upload-json" class="control-btn"><p>📄 Drag & Drop <code>.json</code> file with embedding map</p><input id="upload-json-input" type="file" accept="application/json" style="display: none;"></button>
+                <button id="upload-json" class="control-btn"><p><span class="emoji">📄</span> Drag & Drop <code>.json</code> file with embedding map</p><input id="upload-json-input" type="file" accept="application/json" style="display: none;"></button>
             </div>
         </div>
 

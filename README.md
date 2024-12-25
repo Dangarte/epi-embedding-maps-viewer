@@ -7,7 +7,7 @@ The main reason for creating this page was the desire to have a less laggy inter
 
 Creator of the original maps — [epiTune](https://civitai.com/user/epiTune).
 
-Last update: **`19.12.24`**
+Last update: **`25.12.24`**
 
 ## How to use?
 
@@ -78,6 +78,18 @@ In spaces you can:
 <details>
     <summary>List of changes</summary>
     <ul>
+        <li>
+            <h4>Update <code>25.12.24</code></h4>
+            <ul>
+                <li>Improved text wrapping in card previews to better match text wrapping in HTML elements</li>
+                <li>Added offset of cards by half their size</li>
+                <li>The shape of the lines in the graph has been changed</li>
+                <li>Added circular graph layout (doesn't work well with a large number of nodes with a small number of child nodes)</li>
+                <li>The names of settings in the localStorage have been prefixed with the name of this repository</li>
+                <li>Now when the "reduce motion" mode is enabled, animations are disabled</li>
+                <li>New maps have been uploaded</li>
+            </ul>
+        </li>
         <li>
             <h4>Update <code>19.12.24</code></h4>
             <ul>

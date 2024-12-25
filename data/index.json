@@ -1,5 +1,53 @@
 [
     {
+        "id": "v1-artists-same-girl",
+        "title": "Artists - Same Girl",
+        "author": "epiTune",
+        "changed": "2024-12-24T10:00:00Z",
+        "type": "spaces",
+        "nodesCount": 4096,
+        "fileSize": 62179538,
+        "dataFormat": "epi-space-v1",
+        "tags": [  "Artists" ],
+        "url": "https://dangarte.github.io/epi-embedding-maps-viewer/data/v1-artists-same-girl.json"
+    },
+    {
+        "id": "v1-artists-same-girl-portaint",
+        "title": "Artists - Same Girl Portaint",
+        "author": "epiTune",
+        "changed": "2024-12-24T10:00:00Z",
+        "type": "spaces",
+        "nodesCount": 4096,
+        "fileSize": 62219871,
+        "dataFormat": "epi-space-v1",
+        "tags": [  "Artists" ],
+        "url": "https://dangarte.github.io/epi-embedding-maps-viewer/data/v1-artists-same-girl-portaint.json"
+    },
+    {
+        "id": "v1-artists-scenery",
+        "title": "Artists - Scenery",
+        "author": "epiTune",
+        "changed": "2024-12-24T10:00:00Z",
+        "type": "spaces",
+        "nodesCount": 4096,
+        "fileSize": 69051101,
+        "dataFormat": "epi-space-v1",
+        "tags": [  "Artists", "Scenery" ],
+        "url": "https://dangarte.github.io/epi-embedding-maps-viewer/data/v1-artists-scenery.json"
+    },
+    {
+        "id": "v1-artists-sorcerer",
+        "title": "Artists - Sorcerer",
+        "author": "epiTune",
+        "changed": "2024-12-25T10:00:00Z",
+        "type": "spaces",
+        "nodesCount": 4096,
+        "fileSize": 85864472,
+        "dataFormat": "epi-space-v1",
+        "tags": [  "Artists", "Sorcerer" ],
+        "url": "https://dangarte.github.io/epi-embedding-maps-viewer/data/v1-artists-sorcerer.json"
+    },
+    {
         "id": "v1-tags-1024",
         "title": "General Tags (1024)",
         "author": "epiTune",

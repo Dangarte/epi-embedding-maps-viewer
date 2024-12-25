@@ -1,5 +1,5 @@
 // Version info
-const VERSION = '19.12.24'; // Last modified date
+const VERSION = '25.12.24'; // Last modified date
 
 // Online info
 const HOST = 'https://dangarte.github.io/epi-embedding-maps-viewer';
@@ -8,11 +8,14 @@ const ISLOCAL = !window.location?.href?.startsWith(HOST);
 const SELECTED_DATA_FROM_URL = !ISLOCAL ? new URLSearchParams(window.location.search).get('json-id') || null : null;
 
 // Preferences
-const ISDARK = window.matchMedia('(prefers-color-scheme: dark)').matches;
+const IS_DARK = window.matchMedia('(prefers-color-scheme: dark)').matches;
+const IS_REDUCED_MOTION = window.matchMedia(`(prefers-reduced-motion: reduce)`).matches;
 
 // Settings structure in local storage
+const SETTINGS_PREFIX = 'epi-embedding-maps-viewer--';
 const SETTINGS = {
-    'render-engine': { default: '2d', options: [ '2d', 'webgl2', 'dom' ], titles: { '2d': 'Canvas 2d', 'webgl2': 'Canvas WebGL2', 'dom': 'HTML Elements' } }
+    'render-engine': { default: '2d', options: [ '2d', 'webgl2', 'dom' ], titles: { '2d': 'Canvas 2d', 'webgl2': 'Canvas WebGL2', 'dom': 'HTML Elements' } },
+    'graph-line-type': { default: 'C', options: [ 'C', 'Q', 'L' ], titles: { 'C': 'Cubic curve', 'Q': 'Quadratic curve', 'L': 'Line' } },
 };
 function tryGetSetting(settingKey, otherDefault) {
     if (!SETTINGS[settingKey]) {
@@ -20,25 +23,38 @@ function tryGetSetting(settingKey, otherDefault) {
         return otherDefault;
     }
     try {
-        const value = localStorage.getItem(settingKey);
+        const value = localStorage.getItem(SETTINGS_PREFIX + settingKey);
         if (SETTINGS[settingKey].options.includes(value)) return value;
         else return otherDefault ?? SETTINGS[settingKey].default;
     } catch(_) {
         return otherDefault ?? SETTINGS[settingKey].default;
     }
 }
+function trySetSetting(settingKey, settingValue) {
+    if (!SETTINGS[settingKey]) {
+        console.error(`Unknown setting: ${settingKey}`);
+        return;
+    }
+    try {
+        const value = SETTINGS[settingKey].options.includes(settingValue) ? settingValue : SETTINGS[settingKey].default;
+        localStorage.setItem(SETTINGS_PREFIX + settingKey, value);
+    } catch(_) {
+        console.error(_);
+        return;
+    }
+}
 
 // Display options
-const PAGE_BACKGROUND = ISDARK ? '#000' : '#eee';
+const PAGE_BACKGROUND = IS_DARK ? '#000' : '#eee';
 const CARD_STYLE = {
     fontSize: 24,
     font: "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif",
-    color: ISDARK ? '#dedfe2' : '#232529',
-    colorDim: ISDARK ? '#6d6f76' : '#9da3b2',
-    backgroundColor: ISDARK ? '#232529' : '#dedfe2',
-    btnBackgroundColor: ISDARK ? '#3b3d45' : '#e3e3e3',
-    btnBackgroundColorHover: ISDARK ? '#525660' : '#c8e1ff',
-    borderColor: ISDARK ? '#464953' : '#757a8a',
+    color: IS_DARK ? '#dedfe2' : '#232529',
+    colorDim: IS_DARK ? '#6d6f76' : '#9da3b2',
+    backgroundColor: IS_DARK ? '#232529' : '#dedfe2',
+    btnBackgroundColor: IS_DARK ? '#3b3d45' : '#e3e3e3',
+    btnBackgroundColorHover: IS_DARK ? '#525660' : '#c8e1ff',
+    borderColor: IS_DARK ? '#464953' : '#757a8a',
     noImageBackground: '#2e4f6b',
     borderWidth: 1,
     padding: 6,
@@ -46,20 +62,21 @@ const CARD_STYLE = {
     lineHeight: 1.3,
     matchedColor: '#ff272f',
 };
+const GRAPH_LINE_TYPE = tryGetSetting('graph-line-type'); // Type of curves between cards: C, Q, L. Where C is a cubic curve, Q is a quadratic curve, L is a line
+const MOVE_CARDS_HALF_SIZE = true; // Offset the cards by half their size (i.e. so that their center is at the specified coordinates, instead of the upper left corner)
 
 // Optimization
 // WARNING: webgl2 for some reason, even with hardware acceleration disabled and the --disable-gpu flag when starting the browser, uses VRAM, but it is VERY fast (compared to 2d or dom)
 // NOTE: So if you don't need the browser to use VRAM (for example, you have a small amount of it and you generate images), then DO NOT USE webgl2
-// const RENDER_ENGINE = '2d'; // Toggle card rendering method: webgl2, 2d, dom
-const RENDER_ENGINE = tryGetSetting('render-engine') ; //
+const RENDER_ENGINE = tryGetSetting('render-engine') ; // Toggle card rendering method: webgl2, 2d, dom
 const CANVAS_SMOOTHING = true; // anti-aliasing
 const CANVAS_SMOOTHING_QUALITY = 'low'; // quality of anti-aliasing: low, medium, high
 const CANVAS_TEXT_QUALITY = 'optimizeLegibility'; // canvas textRendering option: optimizeSpeed, optimizeLegibility, geometricPrecigion
 // Perhaps it makes sense to redesign the preview system from "at a certain size" to "at a certain number on the screen"
 const CARD_PREVIEW_SCALING = [ // List of aviable preview scales (Sorted by scale, lower first)
-    { id: 'micro', title: 'Micro preview', scale: .018, quality: .65 },
+    { id: 'micro', title: 'Micro preview', scale: .017, quality: .65 },
     { id: 'tiny', title: 'Tiny preview', scale: .06, quality: .8 },
-    { id: 'small', title: 'Small preview', scale: .18, quality: .95 },
+    { id: 'small', title: 'Small preview', scale: .145, quality: .95 },
     { id: 'normal', title: 'Normal preview', scale: .4, quality: 1 }, // Recommended set quality to 1 at first preview (because it's more noticeable if it's of lower quality)
     // id - Internal size identifier (Must be unique)
     // title - Size name, needed to display in status
@@ -173,10 +190,10 @@ class DataController {
         if (dataFormat === 'epi-graph-v1') return this.#convert__epi_graph_v1_to_noraml(data);
     }
 
-    static #graph_layoutTree(nodesTree, nodesCount) {
+    static #graph_layoutDagre(nodesTree) {
         const xGap = 500;
-        const yGap = 1000;
-        const lastRowHeight = Math.max(2, Math.ceil(nodesCount/200));
+        const yGap = 900;
+        const lastRowHeight = 3;
 
         const nodePositions = new Map();
         let currentX = 0;
@@ -207,6 +224,96 @@ class DataController {
         for (const rootId in nodesTree) {
             const rootBranches = nodesTree[rootId];
             placeNode({ id: rootId, branches: rootBranches }, 0);
+        }
+
+        return nodePositions;
+    }
+
+    static #graph_layoutCircular(nodesTree) {
+        const nodeWidth = 400;
+        const nodeHeight = 800;
+        const gap = 50;
+        const nodePositions = new Map();
+
+        const applyShift = (shiftX, shiftY, childrens) => {
+            childrens.forEach(node => {
+                const pos = node.position;
+                pos.x += shiftX;
+                pos.y += shiftY;
+                if (node.childrens) applyShift(shiftX, shiftY, node.childrens);
+            });
+        };
+
+        const placeInCirccle = node => {
+            const childrens = [];
+            const placeInfo = { id: node.id, width: 0, height: 0, childrens: childrens };
+
+            if (node.branches && node.branches.length) {
+                node.branches.forEach(n => {
+                    if (n.branches && n.branches.length) childrens.push(placeInCirccle(n));
+                    else childrens.push({ id: n.id, width: n.width || nodeWidth, height: n.height || nodeHeight });
+                });
+
+                const totalNodes = childrens.length;
+                let maxWidth = 0, maxHeight = 0, maxDiameter = 0, circumference = 0;
+                childrens.forEach(node => {
+                    if (!node.hypot) node.hypot = Math.hypot(node.width, node.height);
+                    if (node.width > maxWidth) maxWidth = node.width;
+                    if (node.height > maxHeight) maxHeight = node.height;
+                    if (node.hypot > maxDiameter) maxDiameter = node.hypot;
+                    circumference += node.hypot;
+                });
+                const rC = (circumference + gap * totalNodes) / (2 * Math.PI);
+                const rD = maxDiameter*.75 + gap * totalNodes;
+                const useEqual = rD > rC;
+                const radius = useEqual ? rD : rC;
+                const diameter = radius * 2;
+                let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+                let angle = 0
+                const angleIncrement = Math.PI / totalNodes;
+                childrens.forEach(node => {
+                    angle += useEqual ? angleIncrement : Math.asin((node.hypot + gap)/(2 * diameter)) * 2;
+                    const x = radius * Math.cos(angle);
+                    const y = radius * Math.sin(angle);
+                    const position = { x, y };
+                    if (x > maxX) maxX = x;
+                    if (x < minX) minX = x;
+                    if (y > maxY) maxY = y;
+                    if (y < minY) minY = y;
+
+                    nodePositions.set(node.id, position);
+                    node.position = position;
+                    if (node.childrens) applyShift(position.x, position.y, node.childrens); // Move all nodes to their new positions
+
+                    angle += useEqual ? angleIncrement : Math.asin((node.hypot + gap)/(2 * diameter)) * 2;
+                });
+
+                placeInfo.width = Math.abs(maxX - minX) + maxWidth;
+                placeInfo.height = Math.abs(maxY - minY) + maxHeight;
+                placeInfo.hypot = diameter + maxDiameter;
+                const position = { x: placeInfo.width / 2, y: placeInfo.height / 2 };
+                nodePositions.set(node.id, position);
+                placeInfo.position = position;
+            } else {
+                console.warn(`This shouldn't have activated...`);
+                nodePositions.set(node.id, { x: 0, y: 0 });
+                placeInfo.width = node.width || nodeWidth;
+                placeInfo.height = node.height || nodeHeight;
+            }
+
+            return placeInfo;
+        };
+
+        let shiftX = 0;
+        for (const rootId in nodesTree) {
+            const rootBranches = nodesTree[rootId];
+            const placeInfo = placeInCirccle({ id: rootId, branches: rootBranches });
+            const position = placeInfo.position;
+            position.x = shiftX;
+            position.y = 0;
+
+            if (shiftX && placeInfo.childrens) applyShift(shiftX, 0, placeInfo.childrens);
+            shiftX + placeInfo.width + gap * 4;
         }
 
         return nodePositions;
@@ -273,14 +380,19 @@ class DataController {
             if (hasParent.has(branchId)) delete nodesTree[branchId];
         });
 
-        const treeLayout = this.#graph_layoutTree(nodesTree, newData.edges.length);
+        const dagreLayout = this.#graph_layoutDagre(nodesTree);
+        const circularLayout = this.#graph_layoutCircular(nodesTree);
 
         // Create spaces
-        newData.spaces = ['Tree', 'FCose Layout (placeholder)', 'Random'];
+        newData.spaces = ['Dagre Layout', 'Circular Layout', 'FCose Layout (placeholder)', 'Random'];
         newData.nodes.forEach(node => {
-            // Tree
-            const treeSpace = treeLayout.get(node.id) ?? { x: 0, y: 0 };
-            node.spaces.push({ x: treeSpace.x, y: treeSpace.y, positionAbsolute: true });
+            // Dagre
+            const dagreSpace = dagreLayout.get(node.id) ?? { x: 0, y: 0 };
+            node.spaces.push({ x: dagreSpace.x, y: dagreSpace.y, positionAbsolute: true });
+
+            // Circular
+            const circularSpace = circularLayout.get(node.id) ?? { x: 0, y: 0 };
+            node.spaces.push({ x: circularSpace.x, y: circularSpace.y, positionAbsolute: true });
 
             // FCose Layout
             // TODO
@@ -369,11 +481,18 @@ class ControlsController {
 
     static updateDataSwitcher() {
         const dataTypes = {
-            spaces: '🗃️ Space',
-            graphs: '🕸️ Graph'
+            spaces: { text: 'Space', emoji: '🗃️' },
+            graphs: { text: 'Graph', emoji: '🕸️' }
         };
         const fragment = new DocumentFragment();
         const nowTime = Date.now();
+        const createOptionTag = (parent, text, emoji) => {
+            const div = insertElement('div', parent, { class: 'option-tag', 'data-tag': text });
+            if (emoji) insertElement('span', div, { class: 'emoji' }, emoji);
+            div.appendChild(document.createTextNode(` ${text}`));
+            return div;
+        };
+
         INDEX.forEach((item, i) => {
             const option = insertElement('button', fragment, { class: 'data-option', 'data-id': i });
             insertElement('h3', option, { class: 'option-title' }, item.title);
@@ -381,14 +500,18 @@ class ControlsController {
 
             const tagsElement = insertElement('div', option, { class: 'option-tags' });
 
-            if (item.tags && Array.isArray(item.tags)) item.tags.forEach(tag => insertElement('div', tagsElement, { class: 'option-tag', 'data-tag': tag }, tag));
-            if (item.type) insertElement('div', tagsElement, { class: 'option-tag' }, dataTypes[item.type] ?? item.type);
-            if (item.nodesCount) insertElement('div', tagsElement, { class: 'option-tag' }, `🧩 ${item.nodesCount ?? 'Unknown'}`);
-            if (item.fileSize) insertElement('div', tagsElement, { class: 'option-tag' }, `📦 ${filesizeToString(+item.fileSize)}`);
-            if (item.imported) insertElement('div', tagsElement, { class: 'option-tag', 'data-tag': 'Imported' }, '📄 Imported');
+            if (item.tags && Array.isArray(item.tags)) item.tags.forEach(tag => createOptionTag(tagsElement, tag));
+            if (item.type) {
+                const type = dataTypes[item.type] ?? { text: item.type, emoji: undefined };
+                createOptionTag(tagsElement, type.text, type.emoji);
+            }
+            if (item.nodesCount) createOptionTag(tagsElement, item.nodesCount ?? 'Unknown', '🧩');
+            if (item.fileSize) createOptionTag(tagsElement, filesizeToString(+item.fileSize), '📦');
+            if (item.imported) createOptionTag(tagsElement, 'Imported', '📄');
             if (item.changed) {
                 const changed = new Date(item.changed);
-                insertElement('div', tagsElement, { class: 'option-tag', title: changed.toLocaleString() }, `🕒 ${timeAgo(Math.round((nowTime - +changed)/1000))}`);
+                const div = createOptionTag(tagsElement, timeAgo(Math.round((nowTime - +changed)/1000)), '🕒');
+                div.setAttribute('title', changed.toLocaleString());
             }
 
             this.dataListElements[i] = option;
@@ -449,9 +572,11 @@ class CardsPreviewController {
         this.scale = scale;
 
         // List of maximum canvas sizes in browsers: https://jhildenbiddle.github.io/canvas-size/#/?id=test-results
+        // Maximum texture layers in WebGL2: https://developer.mozilla.org/en-US/docs/Web/API/WebGLRenderingContext/activeTexture#:~:text=It%20is%2C%20per%20specification%2C%20at%20least%208
         const canvasScaleMultiplyer = .5; // Temporary solution to the problem with VRAM consumption spike and browser crash when generating preview
         const maxHeight = 16384 * canvasScaleMultiplyer;
         const maxWidth = 16384 * canvasScaleMultiplyer;
+        const maxLayers = 8;
 
         this.data = data;
         const cardsCount = data.length;
@@ -479,6 +604,8 @@ class CardsPreviewController {
 
         if (gridSizeY > maxGridY) {
             const wholeLayersCount = Math.floor(gridSizeY / maxGridY);
+            if (wholeLayersCount >= maxLayers) console.warn(`Warning: Too many texture layers!\nThe current number of texture layers is ${wholeLayersCount}, which exceeds the guaranteed minimum support of ${maxLayers} layers.`);
+
             for (let i = 0; i < wholeLayersCount; i++) {
                 pushCanvas(gridSizeX, maxGridY);
             }
@@ -1036,11 +1163,104 @@ class RenderController {
     }
 
     async decodeImages() {
-        await this.#decodeImages();
+        if (this.#imagesDecoded) return;
+
+        const promises = [];
+        const data = this.cards;
+        data.forEach((info, i) => info.image && typeof info.image === 'string' ? promises.push({ index: i, promise: base64ToImage(info.image) }) : null);
+        const images = await Promise.all(promises.map(item => item.promise));
+        images.forEach((image, i) => {
+            const index = promises[i].index;
+            const aspectRatio = data[index].imageAspectRatio;
+            delete data[index].imageAspectRatio;
+            image.width = image.naturalWidth;
+            image.height = aspectRatio ? Math.round(image.width / aspectRatio) : image.naturalHeight;
+            data[index].image = image;
+        });
+
+        this.#imagesDecoded = true;
     }
 
     calculateCardSizes() {
-        this.#calculateCardSizes();
+        if (this.#cardsSizesReady) return;
+
+        const data = this.cards;
+        const image = data[0].image || { width: 256, height: 256 };
+        const padding = CARD_STYLE.padding + CARD_STYLE.borderWidth;
+        const additionalWidth = padding * 2;
+        const additionalHeight = padding * 4 + CARD_STYLE.fontSize * 1.5; // padding * 2 + controls margin-top + text margin-top // 1.5 - controls font-size
+        const lineHeight = CARD_STYLE.fontSize * CARD_STYLE.lineHeight;
+
+        const measuringCanvas = new OffscreenCanvas(image.width, image.height);
+        const measuringCtx = measuringCanvas.getContext('2d');
+        measuringCtx.font = `normal ${CARD_STYLE.fontSize}px ${CARD_STYLE.font}`;
+
+        const charMeasureCache = new Map();
+        const splitTextIntoChunks = text => {
+            const chunks = [];
+            const textEnd = text.length;
+            let startIndex = 0;
+
+            while (startIndex < textEnd) {
+                const spaceIndex = text.indexOf(' ', startIndex);
+                const dashIndex = text.indexOf('-', startIndex);
+
+                const endIndex = spaceIndex === -1 ? dashIndex === -1 ? textEnd : dashIndex : dashIndex === -1 ? spaceIndex : Math.min(spaceIndex, dashIndex);
+
+                chunks.push({ chunk: text.slice(startIndex, endIndex) + (text[endIndex] ?? ''), splitter: (text[endIndex] ?? '') });
+
+                startIndex = endIndex + 1;
+            }
+
+            return chunks;
+        };
+        const measureChar = char => {
+            const charWidth = measuringCtx.measureText(char).width;
+            charMeasureCache.set(char, charWidth);
+            return charWidth;
+        };
+        const measureText = text => {
+            let width = 0;
+            for(let i = text.length - 1; i >= 0; i--) width += charMeasureCache.get(text[i]) ?? measureChar(text[i]);
+            return width;
+        };
+        const sapceWidth = measureChar(' ');
+        const prepareLines = (text, maxWidth) => {
+            const chunks = splitTextIntoChunks(text);
+            let line = '';
+            let testLineWidth = 0;
+            const lines = [];
+
+            for (const { chunk, splitter } of chunks) {
+                const chunkWidth = measureText(chunk);
+
+                if (testLineWidth + (splitter === ' ' ? chunkWidth - sapceWidth : chunkWidth) > maxWidth && line) {
+                    lines.push(line);
+                    line = chunk;
+                    testLineWidth = chunkWidth;
+                } else {
+                    line += chunk;
+                    testLineWidth += chunkWidth;
+                }
+            }
+
+            lines.push(line);
+            return lines;
+        };
+
+        data.forEach(item => {
+            const { image, title } = item;
+            const { width: w = 256, height: h = 256 } = image || {};
+            const lines = item.lines ?? prepareLines(title, w);
+            item.lines = lines;
+            item.width = Math.round(w + additionalWidth);
+            item.height = Math.round(h + lineHeight * lines.length + additionalHeight);
+        });
+
+        measuringCanvas.width = 0;
+        measuringCanvas.height = 0;
+
+        this.#cardsSizesReady = true;
     }
 
     async init() {
@@ -1093,6 +1313,8 @@ class RenderController {
             
             await draw();
         };
+
+        if (IS_REDUCED_MOTION) return step(1);
         
         while (timeNow <= timeEnd) {
             if (STATE.mousedown) break;
@@ -1156,8 +1378,8 @@ class RenderController {
         if (!this.edges) return;
 
         const GRAPH_PADDING = 12;
-        const GRAPH_CONTROL_Y = 100;
         const GRAPH_PARENT_DISPLAY = 8;
+        const GRAPH_EDGES_OFFSET_Y = 200;
         const rectBorderRadius = CARD_STYLE.borderRadius ? CARD_STYLE.borderRadius + GRAPH_PADDING : 4;
 
         this.#selectedGraph = node !== null ? node !== -1 ? node.index : -1 : this.#selectedGraph;
@@ -1169,6 +1391,8 @@ class RenderController {
             const selectedNode = nodes[selectedIndex];
             const graphGroup = new DocumentFragment();
             const connectedNodes = new Set();
+            const useC = GRAPH_LINE_TYPE === 'C';
+            const useQ = GRAPH_LINE_TYPE === 'Q';
 
             const drawParentEdges = (parentNodeIndex, depth = 1) => {
                 if (depth > GRAPH_PARENT_DISPLAY) return;
@@ -1193,13 +1417,18 @@ class RenderController {
                 const startY = nodeFrom.y + nodeFrom.height + GRAPH_PADDING;
                 const endX = nodeTo.x + nodeTo.width / 2;
                 const endY = nodeTo.y - GRAPH_PADDING;
+                const midX = (startX + endX) / 2;
 
-                const controlX = (startX + endX) / 2;
-                const controlY = Math.min(startY, endY) + GRAPH_CONTROL_Y;
+                const useL = startX === endX || startY === endY;
 
                 const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-                const d = `M ${startX},${startY} Q ${controlX},${controlY} ${endX},${endY}`; // Quadratic curve
-                path.setAttribute('d', d);
+                const pathData =
+                    useL ? `L` :
+                    useC ? `C ${startX},${startY + GRAPH_EDGES_OFFSET_Y} ${endX},${endY - GRAPH_EDGES_OFFSET_Y}` :
+                    useQ ? `Q ${midX},${Math.min(startY, endY)}` :
+                    `L`
+                path.setAttribute('d', `M ${startX},${startY} ${pathData} ${endX},${endY}`);
+                path.setAttribute('data-id', `${nodeFrom.id}-${nodeTo.id}`);
                 if (nodeClass) path.setAttribute('class', nodeClass);
 
                 graphGroup.appendChild(path);
@@ -1213,6 +1442,7 @@ class RenderController {
                 rect.setAttribute('ry', rectBorderRadius);
                 rect.setAttribute('width', node.width + GRAPH_PADDING * 2);
                 rect.setAttribute('height', node.height + GRAPH_PADDING * 2);
+                rect.setAttribute('data-id', node.id);
                 if (nodeClass) rect.setAttribute('class', nodeClass);
                 graphGroup.appendChild(rect);
             };
@@ -1319,106 +1549,6 @@ class RenderController {
 
     #createAtlas(id, scale) {
 
-    }
-
-    async #decodeImages() {
-        if (this.#imagesDecoded) return;
-
-        const promises = [];
-        const data = this.cards;
-        data.forEach((info, i) => info.image && typeof info.image === 'string' ? promises.push({ index: i, promise: base64ToImage(info.image) }) : null);
-        const images = await Promise.all(promises.map(item => item.promise));
-        images.forEach((image, i) => {
-            const index = promises[i].index;
-            const aspectRatio = data[index].imageAspectRatio;
-            delete data[index].imageAspectRatio;
-            image.width = image.naturalWidth;
-            image.height = aspectRatio ? Math.round(image.width / aspectRatio) : image.naturalHeight;
-            data[index].image = image;
-        });
-
-        this.#imagesDecoded = true;
-    }
-
-    #calculateCardSizes() {
-        if (this.#cardsSizesReady) return;
-
-        const data = this.cards;
-        const image = data[0].image || { width: 256, height: 256 };
-        const padding = CARD_STYLE.padding + CARD_STYLE.borderWidth;
-        const additionalWidth = padding * 2;
-        const additionalHeight = padding * 4 + CARD_STYLE.fontSize * 1.5; // padding * 2 + controls margin-top + text margin-top // 1.5 - controls font-size
-        const lineHeight = CARD_STYLE.fontSize * CARD_STYLE.lineHeight;
-
-        const measuringCanvas = new OffscreenCanvas(image.width, image.height);
-        const measuringCtx = measuringCanvas.getContext('2d');
-        measuringCtx.font = `normal ${CARD_STYLE.fontSize}px ${CARD_STYLE.font}`;
-
-        const charMeasureCache = new Map();
-        const splitTextIntoChunks = text => {
-            const chunks = [];
-            const textEnd = text.length;
-            let startIndex = 0;
-
-            while (startIndex < textEnd) {
-                const spaceIndex = text.indexOf(' ', startIndex);
-                const dashIndex = text.indexOf('-', startIndex);
-
-                const endIndex = spaceIndex === -1 ? dashIndex === -1 ? textEnd : dashIndex : dashIndex === -1 ? spaceIndex : Math.min(spaceIndex, dashIndex);
-
-                chunks.push(text.slice(startIndex, endIndex) + (text[endIndex] ?? ''));
-
-                startIndex = endIndex + 1;
-            }
-
-            return chunks;
-        };
-        const measureChar = char => {
-            const charWidth = measuringCtx.measureText(char).width;
-            charMeasureCache.set(char, charWidth);
-            return charWidth;
-        };
-        const measureText = text => {
-            let width = 0;
-            for(let i = text.length - 1; i >= 0; i--) width += charMeasureCache.get(text[i]) ?? measureChar(text[i]);
-            return width;
-        };
-        const prepareLines = (text, maxWidth) => {
-            const words = splitTextIntoChunks(text);
-            let line = '';
-            let testLineWidth = 0;
-            const lines = [];
-
-            for (const word of words) {
-                const wordWidth = measureText(word);
-
-                if (testLineWidth + wordWidth > maxWidth && line) {
-                    lines.push(line);
-                    line = word;
-                    testLineWidth = wordWidth;
-                } else {
-                    line += word;
-                    testLineWidth += wordWidth;
-                }
-            }
-
-            lines.push(line);
-            return lines;
-        };
-
-        data.forEach(item => {
-            const { image, title } = item;
-            const { width: w = 256, height: h = 256 } = image || {};
-            const lines = item.lines ?? prepareLines(title, w);
-            item.lines = lines;
-            item.width = Math.round(w + additionalWidth);
-            item.height = Math.round(h + lineHeight * lines.length + additionalHeight);
-        });
-
-        measuringCanvas.width = 0;
-        measuringCanvas.height = 0;
-
-        this.#cardsSizesReady = true;
     }
 
     #scaleChanged() {
@@ -1806,6 +1936,8 @@ class RenderController {
 
     // ———  Render WebGL2  ———
 
+    // TODO: Every frame transmitting the same texture coordinates... stupid, fix it
+
     #r_WebGL2_program;
     #r_WebGL2_textures;
 
@@ -2161,91 +2293,26 @@ function selectSpace(data, space) {
     const offsetX = (CANVAS_WIDTH - rangeX * scaleFactor) / 2 - minX * scaleFactor;
     const offsetY = (CANVAS_HEIGHT - rangeY * scaleFactor) / 2 - minY * scaleFactor;
 
-    data.forEach((d, i) => {
-        if (skipThisCards.has(i)) return;
-        d.x = d.x * scaleFactor + offsetX;
-        d.y = d.y * scaleFactor + offsetY;
-    });
+    if (MOVE_CARDS_HALF_SIZE) {
+        data.forEach((d, i) => {
+            if (skipThisCards.has(i))  {
+                d.x = d.x - d.width / 2;
+                d.y = d.y - d.height / 2;
+            } else {
+                d.x = d.x * scaleFactor + offsetX - d.width / 2;
+                d.y = d.y * scaleFactor + offsetY - d.height / 2;
+            }
+        });
+    } else {
+        data.forEach((d, i) => {
+            if (skipThisCards.has(i)) return;
+            d.x = d.x * scaleFactor + offsetX;
+            d.y = d.y * scaleFactor + offsetY;
+        });
+    }
 
     STATE.renderController.coordinatesChanged();
     STATE.physics.updatePoints();
-}
-
-function recalcCardSizes(data) {
-    const image = data[0].image ?? { width: 256, height: 256 };
-    const padding = CARD_STYLE.padding + CARD_STYLE.borderWidth;
-    const additionalWidth = padding * 2;
-    const additionalHeight = padding * 4 + CARD_STYLE.fontSize; // padding * 2 + controls margin-top + text margin-top
-    const lineHeight = CARD_STYLE.fontSize * CARD_STYLE.lineHeight;
-
-    const measuringCanvas = new OffscreenCanvas(image.width, image.height);
-    const measuringCtx = measuringCanvas.getContext('2d');
-    measuringCtx.font = `normal ${CARD_STYLE.fontSize}px ${CARD_STYLE.font}`;
-
-    const charMeasureCache = new Map();
-    const splitTextIntoChunks = text => {
-        const chunks = [];
-        const textEnd = text.length;
-        let startIndex = 0;
-
-        while (startIndex < textEnd) {
-            const spaceIndex = text.indexOf(' ', startIndex);
-            const dashIndex = text.indexOf('-', startIndex);
-
-            const endIndex = spaceIndex === -1 ? dashIndex === -1 ? textEnd : dashIndex : dashIndex === -1 ? spaceIndex : Math.min(spaceIndex, dashIndex);
-
-            chunks.push(text.slice(startIndex, endIndex) + (text[endIndex] ?? ''));
-
-            startIndex = endIndex + 1;
-        }
-
-        return chunks;
-    };
-    const measureChar = char => {
-        const charWidth = measuringCtx.measureText(char).width;
-        charMeasureCache.set(char, charWidth);
-        return charWidth;
-    };
-    const measureText = text => {
-        let width = 0;
-        for(let i = text.length - 1; i >= 0; i--) width += charMeasureCache.get(text[i]) ?? measureChar(text[i]);
-        return width;
-    };
-    const prepareLines = (text, maxWidth) => {
-        const words = splitTextIntoChunks(text);
-        let line = '';
-        let testLineWidth = 0;
-        const lines = [];
-
-        for (const word of words) {
-            const wordWidth = measureText(word);
-            
-            if (testLineWidth + wordWidth > maxWidth && line) {
-                lines.push(line);
-                line = word;
-                testLineWidth = wordWidth;
-            } else {
-                line += word;
-                testLineWidth += wordWidth;
-            }
-
-        }
-
-        lines.push(line);
-        return lines;
-    };
-
-    data.forEach(item => {
-        const { image = {}, title } = item;
-        const { width: w = 256, height: h = 256 } = image;
-        const lines = item.lines ?? prepareLines(title, w);
-        item.lines = lines;
-        item.width = Math.round(w + additionalWidth);
-        item.height = Math.round(h + lineHeight * lines.length + additionalHeight);
-    });
-
-    measuringCanvas.width = 0;
-    measuringCanvas.height = 0;
 }
 
 async function switchEmb(embIndex, animate = true) {
@@ -2263,7 +2330,7 @@ async function switchEmb(embIndex, animate = true) {
         d.deltaY = d.newY - d.prevY;
     });
 
-    if (animate) {
+    if (animate && !IS_REDUCED_MOTION) {
         const timeStart = Date.now();
         const timeEnd = timeStart + duration;
         let timeNow = Date.now();
@@ -2697,8 +2764,8 @@ const inputsInit = [
             const group = document.getElementById('advanced-settings-group');
             const toggleButon = document.getElementById('toggle-advanced-settings');
             const newState = !group.classList.contains('hidden');
-            const buttonTextList = toggleButon.getAttribute('data-toggle-text')?.split('|') ?? ['⚙️ Show advanced settings', '⚙️ Hide advanced settings'];
-            toggleButon.textContent = buttonTextList[Number(!newState)];
+            const buttonTextList = toggleButon.getAttribute('data-toggle-text')?.split('|') ?? ['Show advanced settings', 'Hide advanced settings'];
+            toggleButon.querySelector('span:not(.emoji)').textContent = buttonTextList[Number(!newState)];
             group.classList.toggle('hidden', newState);
         }
     },
@@ -2721,7 +2788,7 @@ const inputsInit = [
     { id: 'render-engine', eventName: 'change',
         callback: e => {
             if (SETTINGS['render-engine'].options.includes(e.target.value)) {
-                localStorage.setItem('render-engine', e.target.value);
+                trySetSetting('render-engine', e.target.value);
                 addNotify('💡 Refresh page. The rendering engine will only change after refreshing the page', 10000);
             } else {
                 console.log('How did this render engine make it to the list?', e.target.value);
@@ -2812,6 +2879,12 @@ function filesizeToString(size) {
     if (size < 1288490188) return `${+(size * 0.0009765625).toFixed(2)} Mb`;
     size *= 0.0009765625;
     return `${+(size).toFixed(3)} Gb`;
+}
+
+function copyThis(obj) {
+    if (obj === null || typeof obj !== 'object') return obj;
+    if (Array.isArray(obj)) return obj.map(copyThis);
+    return Object.fromEntries(Object.entries(obj).map(([key, value]) => [key, copyThis(value)]));
 }
 
 function timeAgo(seconds) {
