@@ -1,5 +1,5 @@
 // Version info
-const VERSION = '25.12.24'; // Last modified date
+const VERSION = '28.12.24'; // Last modified date
 
 // Online info
 const HOST = 'https://dangarte.github.io/epi-embedding-maps-viewer';
@@ -484,43 +484,51 @@ class ControlsController {
             spaces: { text: 'Space', emoji: '🗃️' },
             graphs: { text: 'Graph', emoji: '🕸️' }
         };
-        const fragment = new DocumentFragment();
-        const nowTime = Date.now();
-        const createOptionTag = (parent, text, emoji) => {
-            const div = insertElement('div', parent, { class: 'option-tag', 'data-tag': text });
+        const createOptionTag = (parent, text, emoji, title) => {
+            const div = insertElement('div', parent, { class: 'option-tag', 'data-tag': text, title: title || text });
             if (emoji) insertElement('span', div, { class: 'emoji' }, emoji);
-            div.appendChild(document.createTextNode(` ${text}`));
+            insertTextNode(div, ` ${text}`);
             return div;
         };
 
-        INDEX.forEach((item, i) => {
-            const option = insertElement('button', fragment, { class: 'data-option', 'data-id': i });
-            insertElement('h3', option, { class: 'option-title' }, item.title);
-            if (!item.data) option.classList.add('option-not-downloaded');
-
-            const tagsElement = insertElement('div', option, { class: 'option-tags' });
-
-            if (item.tags && Array.isArray(item.tags)) item.tags.forEach(tag => createOptionTag(tagsElement, tag));
-            if (item.type) {
-                const type = dataTypes[item.type] ?? { text: item.type, emoji: undefined };
-                createOptionTag(tagsElement, type.text, type.emoji);
-            }
-            if (item.nodesCount) createOptionTag(tagsElement, item.nodesCount ?? 'Unknown', '🧩');
-            if (item.fileSize) createOptionTag(tagsElement, filesizeToString(+item.fileSize), '📦');
-            if (item.imported) createOptionTag(tagsElement, 'Imported', '📄');
-            if (item.changed) {
-                const changed = new Date(item.changed);
-                const div = createOptionTag(tagsElement, timeAgo(Math.round((nowTime - +changed)/1000)), '🕒');
-                div.setAttribute('title', changed.toLocaleString());
-            }
-
-            this.dataListElements[i] = option;
-        });
         if (INDEX.length) {
+            const fragment = new DocumentFragment();
+            const nowTime = Date.now();
+            INDEX.forEach((item, i) => {
+                const option = insertElement('button', fragment, { class: 'data-option', 'data-id': i });
+                if (!item.data) option.classList.add('option-not-downloaded');
+
+                insertElement('h3', option, { class: 'option-title' }, item.title);
+
+                if (item.tags && Array.isArray(item.tags)) {
+                    const optionTagsElement = insertElement('div', option, { class: 'option-tags' });
+                    item.tags.forEach(tag => createOptionTag(optionTagsElement, tag));
+                }
+
+                const optionTagsDefaultElement = insertElement('div', option, { class: 'option-tags option-tags-default' });
+                if (item.type) {
+                    const type = dataTypes[item.type] ?? { text: item.type, emoji: undefined };
+                    createOptionTag(optionTagsDefaultElement, type.text, type.emoji, 'Display method');
+                }
+                if (item.nodesCount) createOptionTag(optionTagsDefaultElement, item.nodesCount ?? 'Unknown', '🧩', 'Number of nodes');
+                if (item.fileSize) createOptionTag(optionTagsDefaultElement, filesizeToString(+item.fileSize), '📦', 'File size');
+                if (item.changed) {
+                    const changed = new Date(item.changed);
+                    createOptionTag(optionTagsDefaultElement, timeAgo(Math.round((nowTime - +changed)/1000)), '🕒', `Last modified: ${changed.toLocaleString()}`);
+                }
+                if (item.imported) createOptionTag(optionTagsDefaultElement, 'Imported', '📄', 'The file was imported locally');
+
+                this.dataListElements[i] = option;
+            });
             this.dataListElement.textContent = '';
             this.dataListElement.appendChild(fragment);
         } else {
-            this.dataListElement.textContent = 'No data to display';
+            this.dataListElement.textContent = '';
+            const p = insertElement('p', this.dataListElement);
+            insertElement('span', p, { class: 'emoji' }, '📄');
+            insertTextNode(p, ' Drag & Drop ');
+            insertElement('code', p, undefined, '.json');
+            insertTextNode(p, ' file with embedding map');
         }
     }
 
@@ -531,8 +539,8 @@ class ControlsController {
     static emptyAllInputs() {
         this.searchInputElement.value = '';
         this.spacesListElement.textContent = '';
-        this.dataListElement.textContent = '';
-        this.dataListElement.classList.add('hidden');
+        this.dataListElement.close();
+        this.updateDataSwitcher();
         this.dataListSelectedElement.textContent = '...';
         this.searchGoToElement.setAttribute('data-next', 0);
         this.searchGoToElement.setAttribute('data-count', 0);
@@ -2413,7 +2421,7 @@ async function importJsonFile(file) {
             dataType = DataController.getDataType(data);
 
             dataIndex = INDEX.length;
-            INDEX.push({ id: key, title: key, type: dataType, data: data, description: `Imported from file "${file.name}"`, fileSize: file.size, nodesCount: data.nodes.length, changed: Date.now(), imported: true });
+            INDEX.push({ id: key, title: file.name.replace(/\.json$/, ''), type: dataType, data: data, description: `Imported from file "${file.name}"`, fileSize: file.size, nodesCount: data.nodes.length, changed: Date.now(), imported: true });
 
             ControlsController.updateDataSwitcher();
         } catch (err) {
@@ -2716,14 +2724,15 @@ const inputsInit = [
         callback: e => {
             closeAllCardInfoDialog();
             const id = e.target.closest('.data-option[data-id]')?.getAttribute('data-id') ?? null;
-            ControlsController.dataListElement.classList.toggle('hidden');
             if (id !== null) selectData(Number(id));
+            ControlsController.dataListElement.close();
         }
     },
     { id: 'data-list-selected', eventName: 'click',
         callback: e => {
             closeAllCardInfoDialog();
-            ControlsController.dataListElement.classList.toggle('hidden');
+            if (ControlsController.dataListElement.getAttribute('open')) ControlsController.dataListElement.close();
+            else ControlsController.dataListElement.showModal();
         }
     },
     { id: 'random',eventName: 'click',
@@ -2859,12 +2868,12 @@ function highlightMatches(text, matchRegex) {
     let lastIndex = 0;
     
     text.replace(matchRegex, (match, offset) => {
-        if (offset > lastIndex) fragment.appendChild(document.createTextNode(text.slice(lastIndex, offset)));
+        if (offset > lastIndex) insertTextNode(fragment, text.slice(lastIndex, offset));
         fragment.appendChild(createElement('mark', undefined, match));
         lastIndex = offset + match.length;
     });
     
-    if (lastIndex < text.length) fragment.appendChild(document.createTextNode(text.slice(lastIndex)));
+    if (lastIndex < text.length) insertTextNode(fragment, text.slice(lastIndex));
 
     return fragment;
 }
@@ -2993,6 +3002,10 @@ function insertElement(type, parent, attributes, text) {
     const element = createElement(type, attributes, text);
     parent.appendChild(element);
     return element;
+}
+
+function insertTextNode(parent, text) {
+    parent.appendChild(document.createTextNode(text));
 }
 
 function toClipboard(text) {

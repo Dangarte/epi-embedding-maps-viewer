@@ -129,7 +129,6 @@ input, select, a, button, code {
 
 #data-list {
     position: fixed;
-    display: grid;
     grid-template-columns: 1fr 1fr;
     padding: 1em;
     gap: .5em;
@@ -144,6 +143,15 @@ input, select, a, button, code {
     border-radius: var(--border-radius);
 }
 
+#data-list[open] {
+    display: grid;
+}
+
+#data-list[open]::backdrop {
+    -webkit-backdrop-filter: brightness(.5) blur(16px);
+    backdrop-filter: brightness(.5) blur(16px);
+}
+
 #data-list::-webkit-scrollbar {
     width: 4px;
 }
@@ -154,12 +162,10 @@ input, select, a, button, code {
     border: none;
     background: none;
     text-align: left;
-    border-left: 4px solid transparent;
     cursor: pointer;
 }
 
 .data-option:not(.option-selected):hover {
-    border-color: var(--controls-border);
     background-color: var(--button-bg);
 }
 
@@ -180,11 +186,43 @@ input, select, a, button, code {
 }
 
 .option-title::after,
-.option-tag {
+.option-tags .option-tag {
     padding: .25em .75em;
     background-color: var(--button-bg);
     border-radius: var(--border-radius);
     white-space: nowrap;
+}
+
+.option-tag[data-tag="Old"] {
+    background-color: #c13700;
+    color: #ffece4;
+}
+
+.option-tag[data-tag="Imported"] {
+    background-color: #006dba;
+    color: #d2edff;
+}
+
+.option-tags-default .option-tag {
+    background: none;
+    color: var(--controls-text);
+}
+
+.option-image {
+    width: 100%;
+    height: auto;
+    aspect-ratio: 21/9;
+    object-fit: cover;
+}
+
+.option-image.option-image-placeholder {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+img.option-image {
+    line-height: 0;
 }
 
 .option-title::after {
@@ -202,19 +240,7 @@ input, select, a, button, code {
     text-shadow: 4px 2px #007900;
 }
 
-.option-tag[data-tag="Old"] {
-    background-color: #ff4900;
-    color: #ffcbb6;
-}
-
-.option-tag[data-tag="Imported"] {
-    background-color: #0095ff;
-    color: #c4e7ff;
-}
-
 .option-selected {
-    border-color: #0095ff;
-    box-shadow: inset 20px 0 20px -20px #0095ff;
     background-color: var(--button-bg-hover);
 }
 

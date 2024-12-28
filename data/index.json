@@ -1,5 +1,17 @@
 [
     {
+        "id": "v1-color-schemes-1024",
+        "title": "Color Schemes",
+        "author": "epiTune",
+        "changed": "2024-12-27T20:00:00Z",
+        "type": "spaces",
+        "nodesCount": 1024,
+        "fileSize": 16818298,
+        "dataFormat": "epi-space-v1",
+        "tags": [  "Colors" ],
+        "url": "https://dangarte.github.io/epi-embedding-maps-viewer/data/v1-color-schemes-1024.json"
+    },
+    {
         "id": "v1-artists-same-girl",
         "title": "Artists - Same Girl",
         "author": "epiTune",
