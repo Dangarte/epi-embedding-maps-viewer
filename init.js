@@ -1,5 +1,5 @@
 // Version info
-const VERSION = '28.12.24'; // Last modified date
+const VERSION = '29.12.24'; // Last modified date
 
 // Online info
 const HOST = 'https://dangarte.github.io/epi-embedding-maps-viewer';
@@ -44,6 +44,10 @@ function trySetSetting(settingKey, settingValue) {
     }
 }
 
+// IndexedDB info
+const DB_NAME = 'epi-embedding-maps-viewer';
+const DB_VERSION = 1;
+
 // Display options
 const PAGE_BACKGROUND = IS_DARK ? '#000' : '#eee';
 const CARD_STYLE = {
@@ -77,7 +81,7 @@ const CARD_PREVIEW_SCALING = [ // List of aviable preview scales (Sorted by scal
     { id: 'micro', title: 'Micro preview', scale: .017, quality: .65 },
     { id: 'tiny', title: 'Tiny preview', scale: .06, quality: .8 },
     { id: 'small', title: 'Small preview', scale: .145, quality: .95 },
-    { id: 'normal', title: 'Normal preview', scale: .4, quality: 1 }, // Recommended set quality to 1 at first preview (because it's more noticeable if it's of lower quality)
+    { id: 'normal', title: 'Normal preview', scale: .36, quality: 1 }, // Recommended set quality to 1 at first preview (because it's more noticeable if it's of lower quality)
     // id - Internal size identifier (Must be unique)
     // title - Size name, needed to display in status
     // scale - Size at which to move to the next quality
@@ -447,6 +451,138 @@ class DataController {
 
         return newData;
     }
+
+    static async dataImported(index, originalData) {
+        const indexItem = copyThis(INDEX[index]);
+        indexItem.data = originalData;
+        INDEX[index].inIndexedDB = true;
+        await this.setData(indexItem);
+    }
+
+    static async fetchData(index) {
+        const url = INDEX[index]?.url;
+        if (!url) throw new Error('No download link');
+        const json = await fetch(url).then(response => response.json());
+        const indexItem = copyThis(INDEX[index]);
+        indexItem.data = json;
+        await this.setData(indexItem);
+        INDEX[index].inIndexedDB = true;
+        return json;
+    }
+
+    static loadIndex() {
+        return new Promise(async resolve => {
+            if (INDEX.length > 0) return resolve();
+
+            // Fetch from web index if online
+            if (!ISLOCAL) {
+                const indexJSON = await fetch(INDEX_URL).then(response => response.json());
+                indexJSON.forEach(item => INDEX.push(item));
+            }
+
+            // Load from DB index
+            const localIndex = await this.getIndexFromDB();
+            localIndex.forEach(item => {
+                const existItem = INDEX.find(a => a.id === item.id);
+                if (existItem) {
+                    existItem.data = true;
+                    existItem.inIndexedDB = true;
+                } else {
+                    item.inIndexedDB = true;
+                    INDEX.push(item);
+                }
+            });
+
+            resolve();
+        });
+    }
+
+    static getData(index) {
+        return new Promise(async (resolve, reject) => {
+            const { db, close } = await this.#connectDB();
+            const transaction = db.transaction('embedding-maps', "readonly");
+            const getRequest = transaction.objectStore('embedding-maps').index('id').get(INDEX[index].id);
+            getRequest.onsuccess = e => resolve(e.target.result.data);
+            getRequest.onerror = () => reject();
+            transaction.oncomplete = () => close();
+        });
+    }
+
+    static removeData(index) {
+        return new Promise(async (resolve, reject) => {
+            const { db, close } = await this.#connectDB();
+            const transaction = db.transaction('embedding-maps', "readwrite");
+            const store = transaction.objectStore('embedding-maps');
+            const getRequest = store.index('id').get(INDEX[index].id);
+            getRequest.onsuccess = () => {
+                if (!getRequest.result) return reject();
+                const deleteRequest = store.delete(getRequest.result.db_index);
+                deleteRequest.onsuccess = () => {
+                    INDEX[index].inIndexedDB = false;
+                    if (!INDEX[index].data) delete INDEX[index];
+                    resolve();
+                };
+                deleteRequest.onerror = () => reject();
+            };
+            getRequest.onerror = () => reject();
+            transaction.oncomplete = () => close();
+        });
+    }
+
+    static setData(data) {
+        return new Promise(async (resolve, reject) => {
+            const { db, close } = await this.#connectDB();
+            const transaction = db.transaction('embedding-maps', "readwrite");
+            const tableDB = transaction.objectStore('embedding-maps');
+            const addRequest = tableDB.add(data);
+            addRequest.onsuccess = () => resolve();
+            addRequest.onerror = () => reject();
+            transaction.oncomplete = () => close();
+        });
+    }
+
+    static getIndexFromDB() {
+        return new Promise(async (resolve, reject) => {
+            const { db, close } = await this.#connectDB();
+            const transaction = db.transaction('embedding-maps', "readonly");
+            const tableDB = transaction.objectStore('embedding-maps');
+            const request = tableDB.openCursor();
+            const result = [];
+            request.onsuccess = () => {
+                const cursor = request.result;
+                if (!cursor) return resolve(result);
+                const value = cursor.value;
+                delete value.data;
+                result.push(value);
+                return cursor.continue();
+            };
+            request.onerror = () => reject();
+            transaction.oncomplete = () => close();
+        });
+    }
+
+    static #connectDB() {
+        return new Promise((resolve, reject) => {
+            const openRequest = indexedDB.open(DB_NAME, DB_VERSION);
+            openRequest.onsuccess = () => {
+                const db = openRequest.result;
+                const close = () => db.close();
+                resolve({ db, close });
+            };
+            openRequest.onerror = () => {
+                reject()
+            };
+            openRequest.onupgradeneeded = e => {
+                const db = openRequest.result;
+    
+                switch (e.oldVersion) {
+                    case 0:
+                        const table = db.createObjectStore('embedding-maps', { keyPath: 'db_index', autoIncrement: true });
+                        table.createIndex('id', 'id', { unique: true });
+                }
+            };
+        });
+    }
 }
 
 class ControlsController {
@@ -454,6 +590,7 @@ class ControlsController {
     static searchInputElement = document.getElementById('search');
     static searchGoToElement = document.getElementById('goto-search');
     static searchClearElement = document.getElementById('search-clear');
+    static dataListDialogElement = document.getElementById('data-list-container');
     static dataListElement = document.getElementById('data-list');
     static dataListSelectedElement = document.getElementById('data-list-selected');
     static spacesListElement = document.getElementById('switch-spaces');
@@ -472,31 +609,32 @@ class ControlsController {
         switchEmbList.value = STATE.space;
     }
 
-    static selectOptionInDataSwitcher(index = 0) {
-        this.dataListSelectedElement.textContent = INDEX[index].title;
-        this.dataListElement.querySelector('.option-selected')?.classList.remove('option-selected');
-        this.dataListElements[index].classList.remove('option-not-downloaded');
-        this.dataListElements[index].classList.add('option-selected');
-    }
-
     static updateDataSwitcher() {
         const dataTypes = {
             spaces: { text: 'Space', emoji: '🗃️' },
             graphs: { text: 'Graph', emoji: '🕸️' }
         };
         const createOptionTag = (parent, text, emoji, title) => {
-            const div = insertElement('div', parent, { class: 'option-tag', 'data-tag': text, title: title || text });
-            if (emoji) insertElement('span', div, { class: 'emoji' }, emoji);
-            insertTextNode(div, ` ${text}`);
-            return div;
+            const tag = insertElement('div', parent, { class: 'option-tag', 'data-tag': text, title: title || text });
+            if (emoji) insertElement('span', tag, { class: 'emoji' }, emoji);
+            insertTextNode(tag, ` ${text}`);
+            return tag;
         };
+        const createOptionButton = (parent, key, text, emoji, title) => {
+            const button = insertElement('button', parent, { class: `option-button option-${key}`, 'data-id': key, title: title || text });
+            if (emoji) insertElement('span', button, { class: 'emoji' }, emoji);
+            insertTextNode(button, ` ${text}`);
+            return button;
+        };
+
+        const selectedId = STATE.selectData ?? null;
 
         if (INDEX.length) {
             const fragment = new DocumentFragment();
             const nowTime = Date.now();
             INDEX.forEach((item, i) => {
-                const option = insertElement('button', fragment, { class: 'data-option', 'data-id': i });
-                if (!item.data) option.classList.add('option-not-downloaded');
+                const option = insertElement('div', fragment, { class: 'data-option', 'data-id': i });
+                if (item.id === selectedId) option.classList.add('option-selected');
 
                 insertElement('h3', option, { class: 'option-title' }, item.title);
 
@@ -517,6 +655,13 @@ class ControlsController {
                     createOptionTag(optionTagsDefaultElement, timeAgo(Math.round((nowTime - +changed)/1000)), '🕒', `Last modified: ${changed.toLocaleString()}`);
                 }
                 if (item.imported) createOptionTag(optionTagsDefaultElement, 'Imported', '📄', 'The file was imported locally');
+
+                const buttonsContainer = insertElement('div', option, { class: 'option-controls' });
+                if (item.inIndexedDB) createOptionButton(buttonsContainer, 'remove', 'Delete', '🗑️', 'Delete from IndexedDB');
+                if (!item.data) {
+                    if (item.inIndexedDB) createOptionButton(buttonsContainer, 'load', 'Load', '🗄️', 'Load from IndexedDB');
+                    else createOptionButton(buttonsContainer, 'download', 'Download', '📥', 'Download from the Internet');
+                } else createOptionButton(buttonsContainer, 'select', 'Select', '✅', 'Select (downloaded)');
 
                 this.dataListElements[i] = option;
             });
@@ -539,7 +684,8 @@ class ControlsController {
     static emptyAllInputs() {
         this.searchInputElement.value = '';
         this.spacesListElement.textContent = '';
-        this.dataListElement.close();
+        this.dataListDialogElement.close();
+        this.dataListDialogElement.classList.remove('data-allowed-deletion');
         this.updateDataSwitcher();
         this.dataListSelectedElement.textContent = '...';
         this.searchGoToElement.setAttribute('data-next', 0);
@@ -2196,7 +2342,8 @@ async function selectData(id) {
 
     // Load data from file
     await setLoadingStatus(INDEX[id].fileSize ? `Loading data (${filesizeToString(INDEX[id].fileSize)})` : 'Loading data');
-    const data = INDEX[id].data ?? await fetchData(id);
+    const data = INDEX[id].data ?? DataController.normalizeData(INDEX[id].inIndexedDB ? await DataController.getData(id) : await DataController.fetchData(id));
+    if (!INDEX[id].data) INDEX[id].data = data;
     STATE.source = data;
     STATE.data = data.nodes;
     console.log(`${loaderPrefix} %c${key}%c: `, cCode, '', data);
@@ -2267,7 +2414,7 @@ async function selectData(id) {
     
     STATE.renderController.renderGraph(-1);
 
-    ControlsController.selectOptionInDataSwitcher(id);
+    ControlsController.updateDataSwitcher();
 }
 
 function selectSpace(data, space) {
@@ -2381,14 +2528,6 @@ async function switchEmb(embIndex, animate = true) {
     }
 }
 
-async function fetchData(id) {
-    if (!INDEX[id]?.url) throw new Error('No download link');
-    const json = await fetch(INDEX[id].url).then(response => response.json());
-    const data = DataController.normalizeData(json);
-    INDEX[id].data = data;
-    return data;
-}
-
 async function importJsonFile(file) {
     addNotify(`📄 ${file.name}`, 4000);
 
@@ -2417,13 +2556,13 @@ async function importJsonFile(file) {
 
             const text = await fileToText(file);
             const json = JSON.parse(text);
-            const data = DataController.normalizeData(json);
+            const data = DataController.normalizeData(copyThis(json));
             dataType = DataController.getDataType(data);
 
             dataIndex = INDEX.length;
-            INDEX.push({ id: key, title: file.name.replace(/\.json$/, ''), type: dataType, data: data, description: `Imported from file "${file.name}"`, fileSize: file.size, nodesCount: data.nodes.length, changed: Date.now(), imported: true });
-
-            ControlsController.updateDataSwitcher();
+            const indexItem = { id: key, title: file.name.replace(/\.json$/, ''), type: dataType, data: data, description: `Imported from file "${file.name}"`, fileSize: file.size, nodesCount: data.nodes.length, changed: Date.now(), imported: true };
+            INDEX.push(indexItem);
+            await DataController.dataImported(dataIndex, json);
         } catch (err) {
             console.error(err);
             document.getElementById('loading')?.remove();
@@ -2720,19 +2859,39 @@ const inputsInit = [
             draw();
         }
     },
+    { id: 'data-list-container', eventName: 'click',
+        callback: e => {
+            if (e.target.id === 'data-list-container') ControlsController.dataListDialogElement.close();
+        }
+    },
+    { id: 'data-list-button-allow-deletion', eventName: 'click',
+        callback: () => {
+            ControlsController.dataListDialogElement.classList.toggle('data-allowed-deletion');
+        }
+    },
     { id: 'data-list', eventName: 'click',
         callback: e => {
             closeAllCardInfoDialog();
+            const buttonId = e.target.closest('.option-button[data-id]')?.getAttribute('data-id') ?? null
+            if (!buttonId) return;
             const id = e.target.closest('.data-option[data-id]')?.getAttribute('data-id') ?? null;
-            if (id !== null) selectData(Number(id));
-            ControlsController.dataListElement.close();
+            if (id === null) return;
+            if (buttonId === 'download' || buttonId === 'load' || buttonId === 'select') {
+                selectData(Number(id));
+                ControlsController.dataListDialogElement.close(); // TEMP
+            }
+            if (buttonId === 'remove') {
+                DataController.removeData(id).then(() => {
+                    ControlsController.updateDataSwitcher();
+                });
+            }
         }
     },
     { id: 'data-list-selected', eventName: 'click',
         callback: e => {
             closeAllCardInfoDialog();
-            if (ControlsController.dataListElement.getAttribute('open')) ControlsController.dataListElement.close();
-            else ControlsController.dataListElement.showModal();
+            if (ControlsController.dataListDialogElement.getAttribute('open')) ControlsController.dataListDialogElement.close();
+            else ControlsController.dataListDialogElement.showModal();
         }
     },
     { id: 'random',eventName: 'click',
@@ -3353,10 +3512,9 @@ cardsContainer.textContent = '';
 if (ISLOCAL) {
     addNotify('🏠 Local mode', 8000);
     console.log('🏠 Local mode\nℹ️ Index loading was skipped because the page was opened from a file');
-    // document.getElementById('toggle-advanced-settings')?.click();
+    DataController.loadIndex().then(() => ControlsController.updateDataSwitcher());
 } else {
-    fetch(INDEX_URL).then(response => response.json()).then(index => {
-        index.forEach(item => INDEX.push(item));
+    DataController.loadIndex().then(() => {
         const selectItemIndex = INDEX.findIndex(item => item.id === SELECTED_DATA_FROM_URL);
         ControlsController.updateDataSwitcher();
         if (selectItemIndex !== -1) selectData(selectItemIndex);
@@ -3364,4 +3522,6 @@ if (ISLOCAL) {
     });
 }
 
-console.log(`Render engine: ${SETTINGS['render-engine']?.titles?.[RENDER_ENGINE] ?? RENDER_ENGINE}`);
+console.log(`Version from: ${VERSION}
+Render engine: ${SETTINGS['render-engine']?.titles?.[RENDER_ENGINE] ?? RENDER_ENGINE}
+`);

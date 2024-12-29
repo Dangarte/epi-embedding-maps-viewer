@@ -1,7 +1,19 @@
 [
     {
+        "id": "v1-color-schemes-4096-3x3",
+        "title": "Color Schemes 3x3 (4096)",
+        "author": "epiTune",
+        "changed": "2024-12-29T18:00:00Z",
+        "type": "spaces",
+        "nodesCount": 4096,
+        "fileSize": 71018209,
+        "dataFormat": "epi-space-v1",
+        "tags": [  "Colors" ],
+        "url": "https://dangarte.github.io/epi-embedding-maps-viewer/data/v1-color-schemes-4096-3x3.json"
+    },
+    {
         "id": "v1-color-schemes-1024-3x3",
-        "title": "Color Schemes 3x3",
+        "title": "Color Schemes 3x3 (1024)",
         "author": "epiTune",
         "changed": "2024-12-28T16:00:00Z",
         "type": "spaces",

@@ -30,7 +30,6 @@
             <div class="control-item">
                 <label for="data-list-selected"><span class="emoji">🧠</span> Select embedding</label>
                 <button id="data-list-selected" class="control-btn">...</button>
-                <dialog id="data-list">no-data</dialog>
             </div>
             <div class="control-item" disabled>
                 <label for="switch-spaces"><span class="emoji">🌌</span> Switch spaces</label>
@@ -56,6 +55,13 @@
                 <button id="upload-json" class="control-btn"><p><span class="emoji">📄</span> Drag & Drop <code>.json</code> file with embedding map</p><input id="upload-json-input" type="file" accept="application/json" style="display: none;"></button>
             </div>
         </div>
+        <dialog id="data-list-container">
+            <div id="data-list">no-data</div>
+            <div class="option-controls" style="margin-top: 1em;">
+                <!-- <button class="option-button option-remove" id="data-list-button-drop" title="Reset local database"><span class="emoji">❌</span> Drop IndexedDB</button> -->
+                <button class="option-button" id="data-list-button-allow-deletion" title="Toggle display of delete buttons"><span class="emoji">👁</span> Toggle deletion</button>
+            </div>
+        </dialog>
 
         <div id="drop-box">
             <h1>Drop <code>.json</code> file here...</h1>

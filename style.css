@@ -127,27 +127,33 @@ input, select, a, button, code {
     100% { transform: scale(1.1) }
 }
 
+#data-list-container {
+    padding: 0;
+    border: none;
+    outline: none;
+    background: none;
+    overflow: visible;
+}
+
 #data-list {
-    position: fixed;
-    grid-template-columns: 1fr 1fr;
-    padding: 1em;
-    gap: .5em;
-    top: .5em;
-    right: .5em;
     width: min(800px, 80vw);
     max-height: 90vh;
-    overflow-y: scroll;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: .5em;
+    padding: 1em;
     background-color: var(--controls-bg);
     border: 1px solid var(--controls-border);
     color: var(--controls-text);
+    overflow-y: scroll;
     border-radius: var(--border-radius);
 }
 
-#data-list[open] {
-    display: grid;
+#data-list + .option-controls .option-button:not(:hover) {
+    background-color: var(--controls-bg);
 }
 
-#data-list[open]::backdrop {
+#data-list-container[open]::backdrop {
     -webkit-backdrop-filter: brightness(.5) blur(16px);
     backdrop-filter: brightness(.5) blur(16px);
 }
@@ -162,11 +168,11 @@ input, select, a, button, code {
     border: none;
     background: none;
     text-align: left;
-    cursor: pointer;
-}
-
-.data-option:not(.option-selected):hover {
-    background-color: var(--button-bg);
+    cursor: default;
+    display: flex;
+    flex-direction: column;
+    gap: .5em;
+    margin: 2px;
 }
 
 .option-title {
@@ -185,7 +191,6 @@ input, select, a, button, code {
     text-transform: capitalize;
 }
 
-.option-title::after,
 .option-tags .option-tag {
     padding: .25em .75em;
     background-color: var(--button-bg);
@@ -205,7 +210,76 @@ input, select, a, button, code {
 
 .option-tags-default .option-tag {
     background: none;
+    padding: 0;
     color: var(--controls-text);
+}
+
+.option-controls {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: .5em;
+    width: 100%;
+}
+
+.option-button {
+    border-radius: var(--border-radius);
+    padding: .5em 1em;
+    background-color: transparent;
+    transition: .1s ease-in-out;
+    cursor: pointer;
+    border: 1px solid var(--controls-border);
+    user-select: none;
+}
+
+.option-button:hover {
+    background-color: var(--button-bg-hover);
+}
+
+.option-remove {
+    border-color: #b6003f;
+    display: none;
+}
+
+.option-remove:hover {
+    background-color: #b6003f;
+    color: #ffeef4;
+}
+
+.data-allowed-deletion .option-remove {
+    display: block;
+}
+
+.option-download {
+    border-color: #6ac9ff;
+}
+
+.option-download:hover {
+    background-color: #6ac9ff;
+    color: #002337;
+}
+
+.option-load {
+    border-color: #7e57c2;
+}
+
+.option-load:hover {
+    background-color: #7e57c2;
+    color: #e3dded;
+}
+
+.option-select {
+    border-color: #00a669;
+}
+
+.option-select:hover {
+    background-color: #00a669;
+    color: #d0e6de;
+}
+
+.option-selected .option-controls {
+    pointer-events: none;
+    opacity: .27;
 }
 
 .option-image {
@@ -223,21 +297,6 @@ input, select, a, button, code {
 
 img.option-image {
     line-height: 0;
-}
-
-.option-title::after {
-    background: none;
-    padding: 0
-}
-
-.option-not-downloaded .option-title::after {
-    content: '📥';
-}
-
-.data-option:not(.option-not-downloaded) .option-title::after {
-    content: '✔';
-    color: #00b600;
-    text-shadow: 4px 2px #007900;
 }
 
 .option-selected {

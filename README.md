@@ -7,7 +7,7 @@ The main reason for creating this page was the desire to have a less laggy inter
 
 Creator of the original maps — [epiTune](https://civitai.com/user/epiTune).
 
-Last update: **`28.12.24`**
+Last update: **`29.12.24`**
 
 ## How to use?
 
@@ -79,12 +79,20 @@ In spaces you can:
     <summary>List of changes</summary>
     <ul>
         <li>
+            <h4>Update <code>29.12.24</code></h4>
+            <ul>
+                <li>Added map caching to IndexedDB</li>
+                <li>New maps have been uploaded</li>
+            </ul>
+        </li>
+        <li>
             <h4>Update <code>28.12.24</code></h4>
             <ul>
                 <li>The pop-up window with the choice of the map is moved to a real dialog element</li>
                 <li>New maps have been uploaded</li>
             </ul>
         </li>
+        <li>
             <h4>Update <code>25.12.24</code></h4>
             <ul>
                 <li>Improved text wrapping in card previews to better match text wrapping in HTML elements</li>
