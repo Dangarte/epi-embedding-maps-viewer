@@ -485,7 +485,6 @@ class DataController {
             localIndex.forEach(item => {
                 const existItem = INDEX.find(a => a.id === item.id);
                 if (existItem) {
-                    existItem.data = true;
                     existItem.inIndexedDB = true;
                 } else {
                     item.inIndexedDB = true;
