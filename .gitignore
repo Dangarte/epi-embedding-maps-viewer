@@ -1,5 +1,7 @@
 
 data/v0-artists-8192.json
+data/fdmrph.json
+data/v1-chars-2048-mess.json
 convertImageToBase64webp.html
 convertJSONToMSGPACK.html
 lib/msgpack.min.js

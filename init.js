@@ -1,5 +1,5 @@
 // Version info
-const VERSION = '29.12.24'; // Last modified date
+const VERSION = '03.01.25'; // Last modified date
 
 // Online info
 const HOST = 'https://dangarte.github.io/epi-embedding-maps-viewer';
@@ -66,6 +66,7 @@ const CARD_STYLE = {
     lineHeight: 1.3,
     matchedColor: '#ff272f',
 };
+const CARD_NO_IMAGE_SIZE = 200; // Width and height of the image placeholder
 const GRAPH_LINE_TYPE = tryGetSetting('graph-line-type'); // Type of curves between cards: C, Q, L. Where C is a cubic curve, Q is a quadratic curve, L is a line
 const MOVE_CARDS_HALF_SIZE = true; // Offset the cards by half their size (i.e. so that their center is at the specified coordinates, instead of the upper left corner)
 
@@ -90,6 +91,7 @@ const CARD_PREVIEW_SCALING = [ // List of aviable preview scales (Sorted by scal
 const CARD_SCALE_PREVIEW = CARD_PREVIEW_SCALING.at(-1).scale; // At this scale elements changed to preview canvas (set to 0 for disable)
 const SORT_SEARCH_BY_PROXIMITY = true; // Sort search results by distance. That is, when going to a result, go to the nearest card, instead of the standard order.
 const CONVERT_PREVIEW_CANVAS_TO_IMAGE = false; // Convert preview canvas to image (not recommended, it takes a long time to convert, then it takes a long time to "decode image", but use less VRAM (if GPU acceleration is enabled) and fix OOM browser errors)
+const PAUSES_LONG_OPERATIONS_EVERY_N_OPERATIONS = 200; // Pauses in long operations every N operations
 
 // Zooming
 const SCALE_BASE = .6; // Default Zoom
@@ -273,7 +275,7 @@ class DataController {
                 const radius = useEqual ? rD : rC;
                 const diameter = radius * 2;
                 let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-                let angle = 0
+                let angle = 0;
                 const angleIncrement = Math.PI / totalNodes;
                 childrens.forEach(node => {
                     angle += useEqual ? angleIncrement : Math.asin((node.hypot + gap)/(2 * diameter)) * 2;
@@ -462,7 +464,35 @@ class DataController {
     static async fetchData(index) {
         const url = INDEX[index]?.url;
         if (!url) throw new Error('No download link');
-        const json = await fetch(url).then(response => response.json());
+
+        const response = await fetch(url);
+        const reader = response.body.getReader();
+
+        const contentLength = +response.headers.get('Content-Length');
+        const chunks = [];
+        let receivedLength = 0;
+
+        // TODO: Add current download speed
+        while(true) {
+            const chunk = await reader.read();
+            if (chunk.done) break;
+
+            chunks.push(chunk.value);
+            receivedLength += chunk.value.length;
+
+            ControlsController.loadingProgress = (receivedLength/contentLength) * 100;
+        }
+
+        const chunksAll = new Uint8Array(receivedLength);
+        let position = 0;
+        for(let chunk of chunks) {
+            chunksAll.set(chunk, position);
+            position += chunk.length;
+        }
+
+        const result = new TextDecoder("utf-8").decode(chunksAll);
+        const json = JSON.parse(result);
+
         const indexItem = copyThis(INDEX[index]);
         indexItem.data = json;
         await this.setData(indexItem);
@@ -541,6 +571,7 @@ class DataController {
     }
 
     static getIndexFromDB() {
+        // TODO: Splitting the data into 2 tables, otherwise loading ALL the data into memory every time the page is loaded doesn't seem very smart...
         return new Promise(async (resolve, reject) => {
             const { db, close } = await this.#connectDB();
             const transaction = db.transaction('embedding-maps', "readonly");
@@ -573,7 +604,7 @@ class DataController {
             };
             openRequest.onupgradeneeded = e => {
                 const db = openRequest.result;
-    
+
                 switch (e.oldVersion) {
                     case 0:
                         const table = db.createObjectStore('embedding-maps', { keyPath: 'db_index', autoIncrement: true });
@@ -595,10 +626,14 @@ class ControlsController {
     static spacesListElement = document.getElementById('switch-spaces');
     static renderEngineListElement = document.getElementById('render-engine');
     static uploadJsonInput = document.getElementById('upload-json-input');
+    static loadingElement = document.getElementById('loading');
+    static loadingBarProgressElement = document.getElementById('loading-bar-progress');
+    static loadingTitleElement = document.getElementById('loading-title');
     static dataListElements = [];
 
     static #visibleCardsCount = 0;
     static #visibleCardsScale = 'Empty';
+    static #isLoading = false;
 
     static updateEmbeddingList(newEmbeddingList) {
         STATE.space = 0;
@@ -616,24 +651,31 @@ class ControlsController {
         const createOptionTag = (parent, text, emoji, title) => {
             const tag = insertElement('div', parent, { class: 'option-tag', 'data-tag': text, title: title || text });
             if (emoji) insertElement('span', tag, { class: 'emoji' }, emoji);
-            insertTextNode(tag, ` ${text}`);
+            if (text) insertTextNode(tag, ` ${text}`);
             return tag;
         };
         const createOptionButton = (parent, key, text, emoji, title) => {
             const button = insertElement('button', parent, { class: `option-button option-${key}`, 'data-id': key, title: title || text });
             if (emoji) insertElement('span', button, { class: 'emoji' }, emoji);
-            insertTextNode(button, ` ${text}`);
+            if (text) insertTextNode(button, ` ${text}`);
             return button;
         };
 
         const selectedId = STATE.selectData ?? null;
 
         if (INDEX.length) {
+            const favoritesList = tryParseLocalStorageJSON(SETTINGS_PREFIX + 'favorite-list', []);
+            const favorites = Array.isArray(favoritesList) ? favoritesList.map(id => INDEX.findIndex(item => item.id === id)) : [];
+            const order = [...favorites];
+            INDEX.forEach((item, i) => !order.includes(i) ? order.push(i) : null);
             const fragment = new DocumentFragment();
             const nowTime = Date.now();
-            INDEX.forEach((item, i) => {
+            order.forEach(i => {
+                if (i === -1) return;
+                const item = INDEX[i];
                 const option = insertElement('div', fragment, { class: 'data-option', 'data-id': i });
-                if (item.id === selectedId) option.classList.add('option-selected');
+                if (item.id === selectedId) option.classList.add('data-option-selected');
+                if (favorites.includes(i)) option.classList.add('data-option-favorite');
 
                 insertElement('h3', option, { class: 'option-title' }, item.title);
 
@@ -662,6 +704,8 @@ class ControlsController {
                     else createOptionButton(buttonsContainer, 'download', 'Download', '📥', 'Download from the Internet');
                 } else createOptionButton(buttonsContainer, 'select', 'Select', '✅', 'Select (downloaded)');
 
+                createOptionButton(buttonsContainer, 'favorite', '', '⭐', 'Add to favorite');
+
                 this.dataListElements[i] = option;
             });
             this.dataListElement.textContent = '';
@@ -687,6 +731,9 @@ class ControlsController {
         this.dataListDialogElement.classList.remove('data-allowed-deletion');
         this.updateDataSwitcher();
         this.dataListSelectedElement.textContent = '...';
+        this.loadingElement.style.display = 'none';
+        this.loadingBarProgressElement.style.width = '0%';
+        this.loadingTitleElement.textContent = 'Loading...';
         this.searchGoToElement.setAttribute('data-next', 0);
         this.searchGoToElement.setAttribute('data-count', 0);
         this.searchClearElement.style.visibility = 'hidden';
@@ -695,6 +742,30 @@ class ControlsController {
             insertElement('option', this.renderEngineListElement, { value: engine }, SETTINGS['render-engine'].titles[engine]);
         });
         this.renderEngineListElement.value = RENDER_ENGINE;
+    }
+
+    static loadingStart() {
+        if (this.#isLoading) return;
+        this.loadingTitleElement.textContent = 'Loading...';
+        this.loadingBarProgressElement.style.width = '0%';
+        this.loadingElement.style.display = '';
+        document.body.classList.add('loading');
+        this.#isLoading = true;
+    }
+
+    static set loadingTitle(newTitle) {
+        this.loadingTitleElement.textContent = newTitle;
+    }
+
+    static set loadingProgress(newProgress) { // from 0 to 100
+        this.loadingBarProgressElement.style.width = `${ newProgress > 0 ? newProgress < 100 ? newProgress : 100 : 0 }%`;
+    }
+
+    static loadingEnd() {
+        if (!this.#isLoading) return;
+        this.loadingElement.style.display = 'none';
+        document.body.classList.remove('loading');
+        this.#isLoading = false;
     }
 
     static set visibleCardsCount(newCount) {
@@ -766,7 +837,7 @@ class CardsPreviewController {
         } else pushCanvas(gridSizeX, gridSizeY);
     }
 
-    async drawCards(referenceController) {
+    async drawCards(referenceController, convertCanvasAfterDone = 'canvas') { // convertCanvasAfterDone - 'canvas', 'bitmap', 'image'
         const scale = this.scale;
         const count = this.data.length;
         const key = this.key;
@@ -789,10 +860,38 @@ class CardsPreviewController {
         const refCardWidth = hasReference ? referenceController.grid.cellWidth : null;
         const refCardHeight = hasReference ? referenceController.grid.cellHeight : null;
         let refCanvas, refGridX, refGridY, refCardsCount, refCurrentLayerIndex = 0, refCardOffsetY = 0;
+        const convertCanvasToImage = offscreenCanvas => {
+            return new Promise(r => {
+                offscreenCanvas.convertToBlob({ type: 'image/png', quality: 1 }).then(blob => {
+                    const image = new Image(offscreenCanvas.width, offscreenCanvas.height);
+                    // Destroy canvas ASAP after using
+                    offscreenCanvas.width = 0;
+                    offscreenCanvas.height = 0;
+                    offscreenCanvas = null;
+                    const url = URL.createObjectURL(blob);
+                    image.addEventListener('load', () => {
+                        URL.revokeObjectURL(url);
+                        r(image);
+                    }, { once: true });
+                    image.src = url;
+                });
+            });
+        };
+        const convertCanvasToBitmap = async offscreenCanvas => {
+            const imageBitmap = await offscreenCanvas.transferToImageBitmap();
+            // Destroy canvas ASAP after using
+            offscreenCanvas.width = 0;
+            offscreenCanvas.height = 0;
+            offscreenCanvas = null;
+            return imageBitmap;
+        };
         const selectLayer = async i =>  {
             if (gridSizeY) cardOffsetY += gridSizeY * cellHeight;
 
-            if (CONVERT_PREVIEW_CANVAS_TO_IMAGE && currentLayerIndex !== i) layers[currentLayerIndex].canvas = await convertCanvasToImage(layers[currentLayerIndex].canvas);
+            if (convertCanvasAfterDone !== 'canvas' && currentLayerIndex !== i) {
+                if (convertCanvasAfterDone === 'image') layers[currentLayerIndex].canvas = await convertCanvasToImage(layers[currentLayerIndex].canvas);
+                if (convertCanvasAfterDone === 'bitmap') layers[currentLayerIndex].canvas = await convertCanvasToBitmap(layers[currentLayerIndex].canvas);
+            }
 
             ctx = getCanvasContext(layers[i].canvas);
 
@@ -836,7 +935,11 @@ class CardsPreviewController {
                 const serializer = new XMLSerializer();
                 const svgString = serializer.serializeToString(icon);
                 const svgDataUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svgString)}`;
-                return base64ToImage(svgDataUrl);
+                return new Promise(resolve => {
+                    const image = new Image();
+                    image.addEventListener('load', () => resolve(image), { once: true });
+                    image.src = svgDataUrl;
+                });
             };
             controlsTemplate = new OffscreenCanvas(controlsWidth, controlsFontSize);
             const templateCtx = controlsTemplate.getContext('2d', { alpha: true });
@@ -864,7 +967,7 @@ class CardsPreviewController {
                 if (count < TEMPLATE_MIN_COUNT) return;
                 const scaledWidth = Math.round(width * scale);
                 const scaledHeight = Math.round(height * scale);
-                const image = this.data.find(item => item.sizeKey === key).image ?? { width: 256, height: 256 };
+                const image = this.data.find(item => item.sizeKey === key).image ?? { width: CARD_NO_IMAGE_SIZE, height: CARD_NO_IMAGE_SIZE };
                 const imageWidth = Math.round(image.width * scale);
                 const imageHeight = Math.round(image.height * scale);
                 const cardTemplate = new OffscreenCanvas(scaledWidth, scaledHeight);
@@ -903,6 +1006,9 @@ class CardsPreviewController {
             const info = this.data[index];
             const { image, lines, width, height, sizeKey } = info;
 
+            ControlsController.loadingProgress = (index / count) * 100;
+            if (index % PAUSES_LONG_OPERATIONS_EVERY_N_OPERATIONS === 0) await giveBrowserTimeToRender();
+
             if (layerMaxCards <= 0) await selectLayer(currentLayerIndex + 1);
 
             const scaledWidth = Math.round(width * scale);
@@ -923,8 +1029,8 @@ class CardsPreviewController {
                 refCardsCount--;
             } else {
                 ctx.translate(x, y);
-                const imageWidth = Math.round((image ? image.width : 256) * scale);
-                const imageHeight = Math.round((image ? image.height : 256) * scale);
+                const imageWidth = Math.round((image ? image.width : CARD_NO_IMAGE_SIZE) * scale);
+                const imageHeight = Math.round((image ? image.height : CARD_NO_IMAGE_SIZE) * scale);
                 const textOffsetY = imageHeight + fontSize + padding;
 
                 if (cardTemplates[sizeKey]) {
@@ -968,7 +1074,10 @@ class CardsPreviewController {
         }
 
         // Convert last layer if need
-        if (CONVERT_PREVIEW_CANVAS_TO_IMAGE) layers[currentLayerIndex].canvas = await convertCanvasToImage(layers[currentLayerIndex].canvas);
+        if (convertCanvasAfterDone !== 'canvas') {
+            if (convertCanvasAfterDone === 'image') layers[currentLayerIndex].canvas = await convertCanvasToImage(layers[currentLayerIndex].canvas);
+            if (convertCanvasAfterDone === 'bitmap') layers[currentLayerIndex].canvas = await convertCanvasToBitmap(layers[currentLayerIndex].canvas);
+        }
 
         // Clear template
         if (!hasReference) {
@@ -976,9 +1085,9 @@ class CardsPreviewController {
             controlsTemplate.height = 0;
             controlsTemplate = null;
             Object.keys(cardTemplates).forEach(key => {
-                const cardTemplate = cardTemplates[key];
-                cardTemplate.width = 0;
-                cardTemplate.height = 0;
+                cardTemplates[key].width = 0;
+                cardTemplates[key].height = 0;
+                delete cardTemplates[key];
             });
         }
     }
@@ -990,26 +1099,21 @@ class CardsPhysicController {
     grid;
     gridSizeX;
     gridSizeY;
-    gridLarge;
-    gridLargeKeys;
-    gridLargeScale;
     pointWidth;
     pointHeight;
-    
+
     isActive = false;
-    
+
     constructor (data, pointWidth, pointHeight) {
         this.data = data;
         this.pointWidth = pointWidth;
         this.pointHeight = pointHeight;
     }
-    
-    updatePoints() {
-        this.grid = {};
 
-        const grid = this.grid;
-        const cellSizeX = this.pointWidth;
-        const cellSizeY = this.pointHeight;
+    updatePoints() {
+        const grid = this.grid = {};
+        const cellSizeX = this.gridSizeX = this.pointWidth;
+        const cellSizeY = this.gridSizeY = this.pointHeight;
 
         this.points = this.data.map((p, i) => {
             const gridX = Math.floor(p.x / cellSizeX);
@@ -1019,57 +1123,6 @@ class CardsPhysicController {
             gridCell.list.add(i);
             return { x: p.x, y: p.y, i, width: p.width, height: p.height, gridX, gridY, gridCell };
         });
-
-        this.gridSizeX = cellSizeX;
-        this.gridSizeY = cellSizeY;
-
-        this.fillLargeGrid();
-    }
-
-    fillLargeGrid() {
-        this.gridLarge = {};
-        this.gridLargeKeys = { rowKeys: [], rows: {}, columnKeys: [], columns: {} };
-        this.gridLargeScale = 7;
-        const gridLarge = this.gridLarge;
-        const cellLargeSizeX = this.gridSizeX * this.gridLargeScale;
-        const cellLargeSizeY = this.gridSizeY * this.gridLargeScale;
-
-        const createLargeCell = (gridLargeX, gridLargeY) => {
-            if (!gridLarge[gridLargeX]) gridLarge[gridLargeX] = {};
-            const cell = new Set();
-            gridLarge[gridLargeX][gridLargeY] = cell;
-            return cell;
-        };
-
-        this.points.forEach((p, i) => {
-            const gridLargeX1 = Math.floor(p.x / cellLargeSizeX);
-            const gridLargeX2 = Math.floor((p.x - p.width) / cellLargeSizeX);
-            const gridLargeY1 = Math.floor(p.y / cellLargeSizeY);
-            const gridLargeY2 = Math.floor((p.y - p.height) / cellLargeSizeY);
-
-            const cellLarge1 = gridLarge[gridLargeX1]?.[gridLargeY1] ?? createLargeCell(gridLargeX1, gridLargeY1);
-            cellLarge1.add(i);
-
-            if (gridLargeX1 !== gridLargeX2 || gridLargeY1 !== gridLargeY2) {
-                const cellLarge2 = gridLarge[gridLargeX2]?.[gridLargeY2] ?? createLargeCell(gridLargeX2, gridLargeY2);
-                cellLarge2.add(i);
-            }
-        });
-
-        this.gridLargeKeys.rowKeys = Object.keys(gridLarge).map(k => +k).sort((a, b) => a - b);
-        this.gridLargeKeys.rowKeys.forEach(key => this.gridLargeKeys.rows[key] = Object.keys(gridLarge[key]).map(k => +k).sort((a, b) => a - b));
-        this.gridLargeKeys.columnKeys = [];
-        this.gridLargeKeys.columns = {};
-        this.gridLargeKeys.rowKeys.forEach(rowKey => {
-            this.gridLargeKeys.rows[rowKey].forEach(colKey => {
-                if (!this.gridLargeKeys.columns[colKey]) {
-                    this.gridLargeKeys.columns[colKey] = [];
-                    this.gridLargeKeys.columnKeys.push(colKey);
-                }
-                this.gridLargeKeys.columns[colKey].push(rowKey);
-            });
-        });
-        this.gridLargeKeys.columnKeys.sort((a, b) => a - b);
     }
 
     async overlapFix() {
@@ -1090,36 +1143,35 @@ class CardsPhysicController {
         const forceScaleResetAt = 8; // If for this amount of iteration, then set the value to 1
         const forceScaleResetTo = .8; // Reset force multiplier to this value
 
-        const weightUp = 1.4; // If the direction is the same, then increase the shift
-        const weightDown = .6; // If the direction is opposite, then weaken the shift
+        const weightUp = 1.6; // If the direction is the same, then increase the shift
+        const weightDown = .4; // If the direction is opposite, then weaken the shift
 
         const pointWidth = this.pointWidth;
         const pointHeight = this.pointHeight;
         const minDistance2 = pointWidth * pointWidth + pointHeight * pointHeight;
-        const minDistance = Math.sqrt(minDistance2);
+        const minDistance = Math.sqrt(minDistance2) + gap;
 
         const data = this.data;
         const points = this.points;
-
-        const cellSizeX = this.pointWidth;
-        const cellSizeY = this.pointHeight;
         const grid = this.grid;
+
+        const cellSizeX = pointWidth;
+        const cellSizeY = pointHeight;
 
         const updateGrid = () => {
             this.points.forEach((p, i) => {
                 if (!p.changed) return;
                 delete p.changed;
-    
+
                 const gridX = Math.floor(p.x / cellSizeX);
                 const gridY = Math.floor(p.y / cellSizeY);
-    
+
                 if (p.gridX !== gridX || p.gridY !== gridY) {
                     grid[p.gridX][p.gridY].list.delete(i);
-                    const cell = grid[gridX]?.[gridY] ?? this.#createCell(gridX, gridY);
+                    const cell = p.gridCell = grid[gridX]?.[gridY] ?? this.#createCell(gridX, gridY);
                     cell.list.add(i);
                     p.gridX = gridX;
                     p.gridY = gridY;
-                    p.gridCell = cell;
                 }
             });
         }
@@ -1141,7 +1193,7 @@ class CardsPhysicController {
                         const distance2 = dx * dx + dy * dy;
                         if (distance2 < minDistance2) {
                             const distance = Math.sqrt(distance2);
-                            const force = (gap + minDistance - distance) / distance;
+                            const force = (minDistance - distance) / distance;
 
                             if (force > minForce) {
                                 converged = false;
@@ -1188,7 +1240,7 @@ class CardsPhysicController {
         let converged = false, iteration = 0;
         for(iteration = 0; iteration < maxIterations; iteration++) {
             if (STATE.spacing !== spacing) break;
-            
+
             updateGrid();
             converged = simulateRepulsionForces();
             syncPointsWithData();
@@ -1196,10 +1248,10 @@ class CardsPhysicController {
                 await draw();
                 renderController.renderGraph();
             }
-    
+
             if (iteration === forceScaleResetAt) forceScale = forceScaleResetTo;
             if (forceScale > forceScaleMin) forceScale -= forceScaleStep;
-    
+
             if (converged) break;
         }
 
@@ -1207,18 +1259,14 @@ class CardsPhysicController {
             await draw();
             renderController.renderGraph();
         }
-        
-        if (iteration) {
-            addNotify(converged ? 'The overlap has been fixed' : 'Failed to fix overlap, please try again');
-            this.fillLargeGrid();
-        }
+
+        if (iteration) addNotify(converged ? 'The overlap has been fixed' : 'Failed to fix overlap, please try again');
         this.isActive = false;
     }
 
     #createCell(gridX, gridY) {
         if (!this.grid[gridX]) this.grid[gridX] = {};
-        const cell = { list: new Set(), neighbors: [] };
-        this.grid[gridX][gridY] = cell;
+        const cell = this.grid[gridX][gridY] = { list: new Set(), neighbors: [] };
         this.#fillGridNeighbors(gridX, gridY, cell);
         return cell;
     }
@@ -1243,6 +1291,7 @@ class RenderController {
     graphContainer;
     data;
     cards;
+    cardSize;
     edges;
     sizes = [];
     ctx;
@@ -1276,9 +1325,11 @@ class RenderController {
     #cardsMatched = [];
     #cardsNotMatched = [];
     #searchTimer = null;
+    #positionChangeTime;
 
     #viewportWidth = 0;
     #viewportHeight = 0;
+    #viewportGrid;
     #cardsInViewport;
     #visibleCardsCount = 0;
 
@@ -1318,17 +1369,13 @@ class RenderController {
     async decodeImages() {
         if (this.#imagesDecoded) return;
 
-        const promises = [];
-        const data = this.cards;
-        data.forEach((info, i) => info.image && typeof info.image === 'string' ? promises.push({ index: i, promise: base64ToImage(info.image) }) : null);
-        const images = await Promise.all(promises.map(item => item.promise));
-        images.forEach((image, i) => {
-            const index = promises[i].index;
-            const aspectRatio = data[index].imageAspectRatio;
-            delete data[index].imageAspectRatio;
-            image.width = image.naturalWidth;
-            image.height = aspectRatio ? Math.round(image.width / aspectRatio) : image.naturalHeight;
-            data[index].image = image;
+        const images = await convertToImage(this.cards.map(item => item.image));
+        this.cards.forEach((item, i) => {
+            if (!item.image) return;
+            if (!(item.image instanceof Image)) item.image = images[i];
+            item.image.width = item.image.naturalWidth;
+            item.image.height = item.imageAspectRatio ? Math.round(item.image.width / item.imageAspectRatio) : item.image.naturalHeight;
+            delete item.imageAspectRatio;
         });
 
         this.#imagesDecoded = true;
@@ -1338,7 +1385,7 @@ class RenderController {
         if (this.#cardsSizesReady) return;
 
         const data = this.cards;
-        const image = data[0].image || { width: 256, height: 256 };
+        const image = data[0].image || { width: CARD_NO_IMAGE_SIZE, height: CARD_NO_IMAGE_SIZE };
         const padding = CARD_STYLE.padding + CARD_STYLE.borderWidth;
         const additionalWidth = padding * 2;
         const additionalHeight = padding * 4 + CARD_STYLE.fontSize * 1.5; // padding * 2 + controls margin-top + text margin-top // 1.5 - controls font-size
@@ -1401,18 +1448,28 @@ class RenderController {
             return lines;
         };
 
+        let maxHeight = -Infinity, minHeight = Infinity, avgHeight = 0, maxWidth = -Infinity, minWidth = Infinity, avgWidth = 0;
+
         data.forEach(item => {
-            const { image, title } = item;
-            const { width: w = 256, height: h = 256 } = image || {};
-            const lines = item.lines ?? prepareLines(title, w);
+            const { width: w = CARD_NO_IMAGE_SIZE, height: h = CARD_NO_IMAGE_SIZE } = item.image || {};
+            const lines = item.lines ?? prepareLines(item.title, w);
             item.lines = lines;
             item.width = Math.round(w + additionalWidth);
             item.height = Math.round(h + lineHeight * lines.length + additionalHeight);
+            if (item.width > maxWidth) maxWidth = item.width;
+            if (item.width < minWidth) minWidth = item.width;
+            if (item.height > maxHeight) maxHeight = item.height;
+            if (item.height < minHeight) minHeight = item.height;
+            avgWidth += item.width;
+            avgHeight += item.height;
         });
+        avgWidth /= data.length;
+        avgHeight /= data.length;
 
         measuringCanvas.width = 0;
         measuringCanvas.height = 0;
 
+        this.cardSize = { maxHeight, minHeight, avgHeight, maxWidth, minWidth, avgWidth };
         this.#cardsSizesReady = true;
     }
 
@@ -1438,8 +1495,10 @@ class RenderController {
         Object.keys(STATE.previewControllers).forEach(id => {
             const previewCOntroller = STATE.previewControllers[id];
             previewCOntroller.grid?.layers?.forEach(layer => {
-                layer.canvas.width = 0;
-                layer.canvas.height = 0;
+                if (layer.canvas) {
+                    layer.canvas.width = 0;
+                    layer.canvas.height = 0;
+                }
             });
         });
         this.#clear_canvas?.();
@@ -1457,24 +1516,24 @@ class RenderController {
         const timeStart = Date.now();
         const timeEnd = timeStart + duration;
         let timeNow = timeStart;
-    
+
         const step = async t => {
             const factor = smoothStepFactor(t);
             this.#scale = prevScale + factor * deltaScale;
             this.#panX = prevPanX + factor * deltaPanX;
             this.#panY = prevPanY + factor * deltaPanY;
-            
+
             await draw();
         };
 
         if (IS_REDUCED_MOTION) return step(1);
-        
+
         while (timeNow <= timeEnd) {
             if (STATE.mousedown) break;
-    
+
             const t = (timeNow - timeStart) / duration;
             await step(t);
-            
+
             timeNow = Date.now();
             if (timeNow > timeEnd) step(1);
         }
@@ -1605,7 +1664,7 @@ class RenderController {
                 drawEdge(edgeIndex, selectedIndex === edge.indexFrom ? 'graph-selected' : null);
                 if (edge.indexFrom !== selectedIndex) drawParentEdges(edge.indexFrom);
             });
-            
+
             connectedNodes.forEach(nodeIndex => {
                 drawRect(nodeIndex, nodeIndex === selectedIndex ? 'graph-selected' : null);
             });
@@ -1652,9 +1711,10 @@ class RenderController {
     }
 
     coordinatesChanged() {
-        this.#render_coordinatesChanged?.();
-
+        this.#prepareViewportGrid();
         this.cards.forEach(d => d.boundaries = null);
+        this.#render_coordinatesChanged?.();
+        this.#positionChangeTime = Date.now();
     }
 
     switchSapce(newSpaceIndex) {
@@ -1736,7 +1796,7 @@ class RenderController {
 
         if (useElements) {
             if (!renderedElements) this.#clear_canvas?.();
-            emptyMatchedOutline();
+            if (this.#renderEngine === '2d') emptyMatchedOutline();
         } else {
             // Remove all elements if they not nedeed
             if (renderedElements) {
@@ -1756,60 +1816,89 @@ class RenderController {
                 });
             }
 
-            // Draw outline for matched cards
-            const OUTLINE_PREVIEW_MIN_COUNT = 150;
-            const CARD_MATCHED_RECT_INSTEAD_IMAGE_AT = 3; // Draw rectangle instead of matched image if it is smaller than this (in px)
-            drawOnlyMatchedOutline = maxCardWidth * scale < CARD_MATCHED_RECT_INSTEAD_IMAGE_AT;
+            // Draw outline for matched cards (skip if render engine is dom or webgl2)
+            if (this.#renderEngine === '2d') {
+                const OUTLINE_PREVIEW_MIN_COUNT = 150;
+                const CARD_MATCHED_RECT_INSTEAD_IMAGE_AT = 3; // Draw rectangle instead of matched image if it is smaller than this (in px)
+                drawOnlyMatchedOutline = maxCardWidth * scale < CARD_MATCHED_RECT_INSTEAD_IMAGE_AT;
 
-            emptyMatchedOutline();
-            mathcedOutlineImages = new Map();
-            this.sizes.forEach(item => {
-                if (item.count < OUTLINE_PREVIEW_MIN_COUNT) return;
-                const scaledW = Math.round(item.width * scale);
-                const scaledH = Math.round(item.height * scale);
-                const offscreenCanvas = new OffscreenCanvas(scaledW + outlineWidth * 2, scaledH + outlineWidth * 2);
+                emptyMatchedOutline();
+                mathcedOutlineImages = new Map();
+                this.sizes.forEach(item => {
+                    if (item.count < OUTLINE_PREVIEW_MIN_COUNT) return;
+                    const scaledW = Math.round(item.width * scale);
+                    const scaledH = Math.round(item.height * scale);
+                    const offscreenCanvas = new OffscreenCanvas(scaledW + outlineWidth * 2, scaledH + outlineWidth * 2);
 
-                mathcedOutlineImages.set(item.key, offscreenCanvas);
-                const offscreenCtx = offscreenCanvas.getContext('2d', { alpha: true });
-                offscreenCtx.imageSmoothingEnabled = CANVAS_SMOOTHING;
-                offscreenCtx.imageSmoothingQuality = CANVAS_SMOOTHING_QUALITY;
-                offscreenCtx.translate(outlineWidth, outlineWidth);
-                offscreenCtx.strokeStyle = CARD_STYLE.matchedColor;
-                offscreenCtx.lineWidth = outlineWidth;
-                offscreenCtx.stroke(getRoundedRectPath(scaledW, scaledH, borderRadius));
-                if (drawOnlyMatchedOutline) {
-                    offscreenCtx.fillStyle = CARD_STYLE.matchedColor;
-                    offscreenCtx.fill(getRoundedRectPath(scaledW, scaledH, borderRadius));
-                }
-            });
+                    mathcedOutlineImages.set(item.key, offscreenCanvas);
+                    const offscreenCtx = offscreenCanvas.getContext('2d', { alpha: true });
+                    offscreenCtx.imageSmoothingEnabled = CANVAS_SMOOTHING;
+                    offscreenCtx.imageSmoothingQuality = CANVAS_SMOOTHING_QUALITY;
+                    offscreenCtx.translate(outlineWidth, outlineWidth);
+                    offscreenCtx.strokeStyle = CARD_STYLE.matchedColor;
+                    offscreenCtx.lineWidth = outlineWidth;
+                    offscreenCtx.stroke(getRoundedRectPath(scaledW, scaledH, borderRadius));
+                    if (drawOnlyMatchedOutline) {
+                        offscreenCtx.fillStyle = CARD_STYLE.matchedColor;
+                        offscreenCtx.fill(getRoundedRectPath(scaledW, scaledH, borderRadius));
+                    }
+                });
+            }
         }
 
         this.#scaleCached = { scale, mathcedOutlineImages, outlineWidth, borderRadius, drawOnlyMatchedOutline };
         ControlsController.visibleCardsScale = useElements || !previewScale ? 'Element' : previewScale.title;
     }
 
+    #prepareViewportGrid() {
+        this.#viewportGrid = {};
+        const grid = this.#viewportGrid.grid = {};
+        const cellSizeX = this.#viewportGrid.cellSizeX = this.cardSize.avgWidth * 6;
+        const cellSizeY = this.#viewportGrid.cellSizeY = this.cardSize.avgWidth * 6;
+        const keys = this.#viewportGrid.keys = { rowKeys: [], rows: {}, columnKeys: [], columns: {} };
+
+        this.cards.forEach((p, i) => {
+            const x1 = Math.floor(p.x / cellSizeX);
+            const y1 = Math.floor(p.y / cellSizeY);
+
+            if (!grid[x1]) grid[x1] = { [y1]: new Set([i]) };
+            else if (!grid[x1][y1]?.add(i)) grid[x1][y1] = new Set([i]);
+        });
+
+        keys.rowKeys = Object.keys(grid).map(k => +k).sort((a, b) => a - b);
+        keys.rowKeys.forEach(key => keys.rows[key] = Object.keys(grid[key]).map(k => +k).sort((a, b) => a - b));
+        keys.columnKeys = [];
+        keys.columns = {};
+        keys.rowKeys.forEach(rowKey => {
+            keys.rows[rowKey].forEach(colKey => {
+                if (!keys.columns[colKey]) {
+                    keys.columns[colKey] = [];
+                    keys.columnKeys.push(colKey);
+                }
+                keys.columns[colKey].push(rowKey);
+            });
+        });
+        keys.columnKeys.sort((a, b) => a - b);
+    }
+
     #calculateViewport() {
+        const { grid, cellSizeX, cellSizeY, keys } = this.#viewportGrid;
         const scale = this.#scale;
         const panX = this.#panX;
         const panY = this.#panY;
-        const data = this.cards;
+        const cards = this.cards;
 
         const vsY = -panY / scale;
         const veY = vsY + this.#viewportHeight / scale;
         const vsX = -panX / scale;
         const veX = vsX + this.#viewportWidth / scale;
 
-        const cardsInViewport = this.#cardsInViewport = new Uint8Array(data.length).fill(0);
+        const cardsInViewport = this.#cardsInViewport = new Uint8Array(cards.length).fill(0);
 
-        const physics = STATE.physics;
-        const vg = physics.gridLarge;
-        const vgKeys = physics.gridLargeKeys;
-        const vgSizeX = physics.gridSizeX * physics.gridLargeScale;
-        const vgSizeY = physics.gridSizeY * physics.gridLargeScale;
-        const minFullX = Math.floor(vsX / vgSizeX);
-        const minFullY = Math.floor(vsY / vgSizeY);
-        const maxFullX = Math.floor(veX / vgSizeX);
-        const maxFullY = Math.floor(veY / vgSizeY);
+        const minFullX = Math.floor(vsX / cellSizeX);
+        const minFullY = Math.floor(vsY / cellSizeY);
+        const maxFullX = Math.floor(veX / cellSizeX);
+        const maxFullY = Math.floor(veY / cellSizeY);
         const minX = minFullX - 1;
         const minY = minFullY - 1;
         const maxX = maxFullX;
@@ -1817,19 +1906,18 @@ class RenderController {
 
         const checkCell = cell => {
             cell.forEach(index => {
-                const b = data[index].boundaries ?? this.#calculateCardBoundaries(data[index]);
+                const b = cards[index].boundaries ?? this.#calculateCardBoundaries(cards[index]);
                 if (veX > b[0] && veY > b[1] && vsX < b[2] && vsY < b[3]) cardsInViewport[index] = 1;
             });
         };
 
-        for (const rowX of vgKeys.rowKeys) {
+        for (const rowX of keys.rowKeys) {
             if (rowX < minX) continue;
             if (rowX > maxX) break;
-            const row = vg[rowX];
-            const keys = vgKeys.rows[rowX];
+            const row = grid[rowX];
 
             if (rowX > minFullX && rowX < maxFullX) {
-                for (const cellY of keys) {
+                for (const cellY of keys.rows[rowX]) {
                     if (cellY < minY) continue;
                     if (cellY > maxY) break;
 
@@ -1837,7 +1925,7 @@ class RenderController {
                     else checkCell(row[cellY]);
                 }
             } else {
-                for (const cellY of keys) {
+                for (const cellY of keys.rows[rowX]) {
                     if (cellY < minY) continue;
                     if (cellY > maxY) break;
 
@@ -1897,7 +1985,7 @@ class RenderController {
 
     #render_DOM() {
         const filter = this.#filter;
-        const data = this.cards;
+        const positionChangeTime = this.#positionChangeTime;
         const cardsInViewport = this.#cardsInViewport;
 
         let isMatched = false;
@@ -1909,13 +1997,10 @@ class RenderController {
             }
 
             const cardElement = d.cardElement ?? this.#r_DOM_createCard(d);
-            if (cardElement.x !== d.x) {
+            if (cardElement.positionChangeTime !== positionChangeTime) {
                 cardElement.style.left = `${d.x}px`;
-                cardElement.x = d.x;
-            }
-            if (cardElement.y !== d.y) {
                 cardElement.style.top = `${d.y}px`;
-                cardElement.y = d.y;
+                cardElement.positionChangeTime = positionChangeTime;
             }
             if (cardElement.filter !== filter) {
                 if (cardElement.matched !== isMatched) this.#r_DOM_toggleCardMatched(cardElement, isMatched);
@@ -1930,7 +2015,7 @@ class RenderController {
             isMatched = true;
             this.#cardsMatched.forEach(moveElement);
         } else {
-            data.forEach(moveElement);
+            this.cards.forEach(moveElement);
         }
     }
 
@@ -1993,7 +2078,6 @@ class RenderController {
     // ———  Render 2d  ———
 
     #render_2d() {
-        const cards = this.cards;
         const scale = this.#scale;
         const ctx = this.ctx;
         const cardsInViewport = this.#cardsInViewport;
@@ -2048,7 +2132,7 @@ class RenderController {
             if (scaleCached.drawOnlyMatchedOutline) this.#cardsMatched.forEach(drawMatchedOutline);
             else this.#cardsMatched.forEach(drawMatchedCard);
         } else {
-            cards.forEach(drawCard);
+            this.cards.forEach(drawCard);
         }
 
         ctx.translate(-this.#panX, -this.#panY);
@@ -2095,26 +2179,24 @@ class RenderController {
     #r_WebGL2_textures;
 
     #render_WebG2L() {
-        const cards = this.cards;
-        const panX = this.#panX;
-        const panY = this.#panY;
-        const scale = this.#scale;
         const gl = this.ctx;
         const program = this.#r_WebGL2_program;
         const cardsInViewport = this.#cardsInViewport;
 
         gl.clear(gl.COLOR_BUFFER_BIT);
 
-        const texturesToDraw = [];
-        this.#r_WebGL2_textures.forEach(texture => texturesToDraw.push({ cards: [], texture }));
+        const texturesToDraw = this.#r_WebGL2_textures.map(texture => ({ cards: [], texture }));
 
-        cards.forEach(d => cardsInViewport[d.index] ? texturesToDraw[d.texLayer].cards.push(d) : null);
+        this.cards.forEach(d => cardsInViewport[d.index] ? texturesToDraw[d.texLayer].cards.push(d) : null);
 
         const panLocation = gl.getUniformLocation(program, 'u_pan');
         const scaleLocation = gl.getUniformLocation(program, 'u_scale');
         const positionLocation = gl.getAttribLocation(program, 'a_position');
         const texCoordLocation = gl.getAttribLocation(program, 'a_texCoord');
         const textureLocation = gl.getUniformLocation(program, 'u_texture');
+
+        gl.uniform2f(panLocation, this.#panX / CANVAS_WIDTH, this.#panY / CANVAS_HEIGHT);
+        gl.uniform1f(scaleLocation, this.#scale);
 
         const createBuffer = (location, bufferArray) => {
             const buffer = gl.createBuffer();
@@ -2131,9 +2213,6 @@ class RenderController {
             const positionBuffer = createBuffer(positionLocation, positions);
             const texCoordBuffer = createBuffer(texCoordLocation, texCoords);
 
-            gl.uniform2f(panLocation, panX / CANVAS_WIDTH, panY / CANVAS_HEIGHT);
-            gl.uniform1f(scaleLocation, scale);
-
             gl.activeTexture(gl.TEXTURE0);
             gl.bindTexture(gl.TEXTURE_2D, texture);
             gl.uniform1i(textureLocation, 0);
@@ -2145,17 +2224,16 @@ class RenderController {
         };
 
         texturesToDraw.forEach(layer => {
-            if (layer.cards.length !== 0) {
-                const positions = new Float32Array(layer.cards.length * 12);
-                const texCoords = new Float32Array(layer.cards.length * 12);
-                let lastIndex = 0;
-                layer.cards.forEach(d => {
-                    positions.set(d.position, lastIndex);
-                    texCoords.set(d.texCoords, lastIndex);
-                    lastIndex += 12;
-                });
-                drawFromTexture(layer.texture, texCoords, positions);
-            }
+            if (!layer.cards.length) return;
+            const positions = new Float32Array(layer.cards.length * 12);
+            const texCoords = new Float32Array(layer.cards.length * 12);
+            let lastIndex = 0;
+            layer.cards.forEach(d => {
+                positions.set(d.position, lastIndex);
+                texCoords.set(d.texCoords, lastIndex);
+                lastIndex += 12;
+            });
+            drawFromTexture(layer.texture, texCoords, positions);
         });
     }
 
@@ -2183,11 +2261,17 @@ class RenderController {
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
             gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, layer.canvas);
 
-            this.#r_WebGL2_textures.push(texture);
+            // Clear the bitmap or canvas, it is no longer needed
+            if (layer.canvas instanceof ImageBitmap) {
+                layer.canvas.close();
+            } else if (layer.canvas instanceof OffscreenCanvas) {
+                layer.canvas.width = 0;
+                layer.canvas.height = 0;
+            }
+            layer.canvas = null;
 
-            // Clear the preview canvas, it is no longer needed
-            layer.canvas.width = 0;
-            layer.canvas.height = 0;
+            // Send texture to VRAM
+            this.#r_WebGL2_textures.push(texture);
         });
 
 
@@ -2196,11 +2280,9 @@ class RenderController {
         this.cards.forEach(d => {
             const preview = d[previewId];
             const layer = layers[preview.layer];
-            const texInfo = [ preview.x / layer[0], preview.y / layer[1], preview.width / layer[0], preview.height / layer[1] ];
-            const size = [ d.x / CANVAS_WIDTH, d.y / CANVAS_HEIGHT, d.width / CANVAS_WIDTH, d.height / CANVAS_HEIGHT ];
             d.texLayer = preview.layer;
-            d.texCoords = this.#r_WebGL2_getCoords(texInfo);
-            d.position = this.#r_WebGL2_getCoords(size);
+            d.texCoords = this.#r_WebGL2_getCoords(preview.x / layer[0], preview.y / layer[1], preview.width / layer[0], preview.height / layer[1]);
+            d.position = this.#r_WebGL2_getCoords(d.x / CANVAS_WIDTH, d.y / CANVAS_HEIGHT, d.width / CANVAS_WIDTH, d.height / CANVAS_HEIGHT);
         });
 
         //
@@ -2249,20 +2331,19 @@ class RenderController {
 
     #r_WebGL2_coordinatesChanged() {
         this.cards.forEach(d => {
-            const size = [ d.x / CANVAS_WIDTH, d.y / CANVAS_HEIGHT, d.width / CANVAS_WIDTH, d.height / CANVAS_HEIGHT ];
-            d.position = this.#r_WebGL2_getCoords(size);
+            d.position = this.#r_WebGL2_getCoords(d.x / CANVAS_WIDTH, d.y / CANVAS_HEIGHT, d.width / CANVAS_WIDTH, d.height / CANVAS_HEIGHT);
         });
     }
 
-    #r_WebGL2_getCoords(info) {
+    #r_WebGL2_getCoords(x, y, width, height) {
         return [
-            info[0], info[1] + info[3],
-            info[0] + info[2], info[1] + info[3],
-            info[0], info[1],
-    
-            info[0], info[1],
-            info[0] + info[2], info[1],
-            info[0] + info[2], info[1] + info[3]
+            x, y + height,
+            x + width, y + height,
+            x, y,
+
+            x, y,
+            x + width, y,
+            x + width, y + height
         ];
     }
 
@@ -2275,11 +2356,6 @@ class RenderController {
         const shader = gl.createShader(type);
         gl.shaderSource(shader, source);
         gl.compileShader(shader);
-        if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
-            console.error('Shader compile error:', gl.getShaderInfoLog(shader));
-            gl.deleteShader(shader);
-            return null;
-        }
         return shader;
     }
 
@@ -2289,11 +2365,6 @@ class RenderController {
         gl.attachShader(program, vertexShader);
         gl.attachShader(program, fragmentShader);
         gl.linkProgram(program);
-        if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-            console.error('Program link error:', gl.getProgramInfoLog(program));
-            gl.deleteProgram(program);
-            return null;
-        }
         return program;
     }
 }
@@ -2308,20 +2379,16 @@ async function selectData(id) {
     if (STATE.selectData === key) return;
     const loaderPrefix = '[Loader]';
     const cCode = 'background-color: #264f73; color: #c5d9eb; padding: .125em .5em; border-radius: .25em;';
-    const loading = document.getElementById('loading') ?? createElement('div', { id: 'loading' });
-    const currentLoadingText = loading.textContent;
-    loading.textContent = '';
-    const loadingText = insertElement('span', loading, undefined, currentLoadingText);
-    document.body.classList.add('loading');
+    ControlsController.loadingStart();
     let loadingStatus = '';
     const setLoadingStatus = async text => {
         if (loadingStatus) console.timeEnd(loadingStatus);
-        loadingText.textContent = text;
-        await new Promise(r => setTimeout(r, 0)); // A hack to make the browser render the text
+        ControlsController.loadingProgress = 0;
+        ControlsController.loadingTitle = text;
+        await giveBrowserTimeToRender();
         loadingStatus = `${loaderPrefix} ${text}`;
         console.time(loadingStatus);
     };
-    document.body.appendChild(loading);
 
     STATE.ready = false;
     console.log(`${loaderPrefix} Start loading %c${key}`, cCode);
@@ -2351,11 +2418,7 @@ async function selectData(id) {
     STATE.data.forEach((d, index) => {
         d.index = index;
         d.id = d.id ?? `card-${index}`;
-
-        if (d.relatedTags) d.relatedTags = d.relatedTags.map(tag => {
-            if (typeof tag === 'string') return { title: tag };
-            return tag;
-        }); else d.relatedTags = [];
+        d.relatedTags = d.relatedTags?.map(tag => typeof tag === 'string' ? ({ title: tag }) : tag) ?? [];
     });
 
 
@@ -2371,11 +2434,13 @@ async function selectData(id) {
 
     const scaleInfoFirst = CARD_PREVIEW_SCALING.at(-1);
     if (CARD_SCALE_PREVIEW >= SCALE_MIN && scaleInfoFirst.allowed) {
+        // const convertCanvasAfterDone = RENDER_ENGINE === 'webgl2' ? 'bitmap' : CONVERT_PREVIEW_CANVAS_TO_IMAGE ? 'image' : 'canvas';
+        const convertCanvasAfterDone = CONVERT_PREVIEW_CANVAS_TO_IMAGE ? 'image' : 'canvas';
         // Full preview
         await setLoadingStatus(`Generating preview (${scaleInfoFirst.title})`);
 
         const firstPreviewController = STATE.previewControllers[scaleInfoFirst.id] = new CardsPreviewController(scaleInfoFirst.id, STATE.data, scaleInfoFirst.scale * scaleInfoFirst.quality);
-        await firstPreviewController.drawCards();
+        await firstPreviewController.drawCards(undefined, convertCanvasAfterDone);
 
         // Downscaled previews
         for (let i = CARD_PREVIEW_SCALING.length - 2; i >= 0; i--) {
@@ -2384,33 +2449,32 @@ async function selectData(id) {
                 await setLoadingStatus(`Generating preview (${scaleInfo.title})`);
 
                 STATE.previewControllers[scaleInfo.id] = new CardsPreviewController(scaleInfo.id, STATE.data, scaleInfo.scale * scaleInfo.quality);
-                await STATE.previewControllers[scaleInfo.id].drawCards(STATE.previewControllers[CARD_PREVIEW_SCALING[i + 1].id]);
+                await STATE.previewControllers[scaleInfo.id].drawCards(STATE.previewControllers[CARD_PREVIEW_SCALING[i + 1].id], convertCanvasAfterDone);
             }
         }
     }
 
     // Create physics controller
-    STATE.maxCardWidth = Math.max(...STATE.data.map(item => item.width));
-    STATE.maxCardHeight = Math.max(...STATE.data.map(item => item.height));
+    STATE.maxCardWidth = STATE.renderController.cardSize.maxWidth;
+    STATE.maxCardHeight = STATE.renderController.cardSize.maxHeight;
     STATE.physics = new CardsPhysicController(STATE.data, STATE.maxCardWidth, STATE.maxCardHeight);
 
     await setLoadingStatus('Calculating the position of the cards');
     selectSpace(STATE.data, STATE.space);
-    if (data.spaces.length > 1) document.getElementById('switch-spaces')?.parentElement?.removeAttribute('disabled');
-    else document.getElementById('switch-spaces')?.parentElement?.setAttribute('disabled', '');
+    if (data.spaces.length > 1) ControlsController.spacesListElement.parentElement?.removeAttribute('disabled');
+    else ControlsController.spacesListElement.parentElement?.setAttribute('disabled', '');
 
     await setLoadingStatus('Initializing the render controller');
     await STATE.renderController.init();
 
     console.timeEnd(loadingStatus);
-    loading.remove();
-    document.body.classList.remove('loading');
+    ControlsController.loadingEnd();
 
     STATE.selectData = key;
     STATE.ready = true;
     console.log(`${loaderPrefix} Loading %c${key}%c ready`, cCode, '');
     STATE.renderController.recenterView(0);
-    
+
     STATE.renderController.renderGraph(-1);
 
     ControlsController.updateDataSwitcher();
@@ -2491,21 +2555,21 @@ async function switchEmb(embIndex, animate = true) {
 
         const step = async t => {
             const factor = smoothStepFactor(t);
-    
+
             data.forEach((d, i) => {
                 const t = targets[i];
                 d.x = t.prevX + factor * t.deltaX;
                 d.y = t.prevY + factor * t.deltaY;
             });
             STATE.renderController.coordinatesChanged();
-    
+
             await draw();
             renderController.renderGraph();
         };
-        
+
         while (timeNow <= timeEnd) {
             if (STATE.space !== embIndex) break;
-            
+
             const t = (timeNow - timeStart) / duration;
             await step(t);
 
@@ -2548,10 +2612,8 @@ async function importJsonFile(file) {
             // 536870912 - 512 mb
             if (file.size > 536870912) throw new Error('File is too large (More than 512 MB)');
 
-            const loading = document.getElementById('loading') ?? createElement('div', { id: 'loading' });
-            loading.textContent = 'Start of import';
-            document.body.appendChild(loading);
-            document.body.classList.add('loading');
+            ControlsController.loadingStart();
+            ControlsController.loadingTitle = 'Start of import';
 
             const text = await fileToText(file);
             const json = JSON.parse(text);
@@ -2562,15 +2624,27 @@ async function importJsonFile(file) {
             const indexItem = { id: key, title: file.name.replace(/\.json$/, ''), type: dataType, data: data, description: `Imported from file "${file.name}"`, fileSize: file.size, nodesCount: data.nodes.length, changed: Date.now(), imported: true };
             INDEX.push(indexItem);
             await DataController.dataImported(dataIndex, json);
-        } catch (err) {
-            console.error(err);
-            document.getElementById('loading')?.remove();
-            document.body.classList.remove('loading');
-            addNotify(`❌ Import error: ${err}`, 6000);
+        } catch (error) {
+            console.error(error);
+            ControlsController.loadingEnd();
+            addNotify(`❌ Import error: ${error}`, 6000);
         }
     }
 
-    if (dataIndex !== -1) selectData(dataIndex);
+    if (dataIndex !== -1) {
+        try {
+            selectData(dataIndex);
+        } catch (error) {
+            console.error(error);
+            ControlsController.loadingEnd();
+            addNotify(`❌ Error loading data: ${error}`, 6000);
+        }
+    }
+}
+
+async function importFromMsgpack(file) {
+    console.log('TODO: Import from msgpack', file);
+    alert(`Why are you trying to import it here? It's not ready yet...`);
 }
 
 function sortByProximity(points) {
@@ -2614,10 +2688,10 @@ function sortByProximity(points) {
     });
 
     let minDistance, nearestIndex, target;
-    const distanceSquared = (a, b) => (a.x - b.x) ** 2 + (a.y - b.y) ** 2;
     const checkCell = (x, y) => {
         grid[x]?.[y]?.forEach(i => {
-            const dist = distanceSquared(target, relativePoints[i]);
+            const point = relativePoints[i];
+            const dist = (target.x - point.x) ** 2 + (target.y - point.y) ** 2;
             if (dist < minDistance) {
                 minDistance = dist;
                 nearestIndex = i;
@@ -2625,20 +2699,19 @@ function sortByProximity(points) {
         });
     };
     const addPointToSortedList = point => {
-        const { x, y, index } = point;
         sorted.push(point);
-        visited.add(index);
+        visited.add(point.index);
 
         // Remove point from grid
-        const gridX = Math.floor(x / cellSizeX);
-        const gridY = Math.floor(y / cellSizeY);
+        const gridX = Math.floor(point.x / cellSizeX);
+        const gridY = Math.floor(point.y / cellSizeY);
 
         if (gridSizes[gridX][1][gridY] === 1) {
             delete grid[gridX][gridY];
             if (gridSizes[gridX][0] === 1) delete grid[gridX];
             else gridSizes[gridX][0]--;
         } else {
-            grid[gridX][gridY].delete(index);
+            grid[gridX][gridY].delete(point.index);
             gridSizes[gridX][1][gridY]--;
         }
     };
@@ -2691,7 +2764,7 @@ function sortByProximity(points) {
                 }
             }
         }
-        
+
         addPointToSortedList(relativePoints[nearestIndex]);
     }
 
@@ -2719,13 +2792,13 @@ function draw() {
 function createCardElement(d) {
     const card = createElement('div', { class: 'card', 'data-id': d.id });
     if (d.image) card.appendChild(d.image);
-    else insertElement('div', card, { class: 'image-placeholder' }, 'no-image');
+    else insertElement('div', card, { class: 'image-placeholder', style: `width: ${CARD_NO_IMAGE_SIZE}px; height: ${CARD_NO_IMAGE_SIZE}px;` }, 'no-image');
     const p = insertElement('p', card, { class: 'card-title' }, d.title);
     const controls = insertElement('div', card, { class: 'buttons' });
-    
+
     if (d.information) insertElement('div', controls, { class: 'button', 'data-id': 'info' }).appendChild(ICON_BOOK.cloneNode(true));
     else insertElement('div', controls, { class: 'button', 'disabled': '' }).appendChild(ICON_BOOK.cloneNode(true));
-    
+
     insertElement('div', controls, { class: 'button', 'data-id': 'copy' }).appendChild(ICON_COPY.cloneNode(true));
 
     const searchPopup = insertElement('div', card, { class: 'card-related-tags' });
@@ -2876,13 +2949,28 @@ const inputsInit = [
             const id = e.target.closest('.data-option[data-id]')?.getAttribute('data-id') ?? null;
             if (id === null) return;
             if (buttonId === 'download' || buttonId === 'load' || buttonId === 'select') {
-                selectData(Number(id));
-                ControlsController.dataListDialogElement.close(); // TEMP
+                try {
+                    selectData(Number(id));
+                } catch (error) {
+                    console.error(error);
+                    ControlsController.loadingEnd();
+                    addNotify(`❌ Error loading data: ${error}`, 6000);
+                }
+                ControlsController.dataListDialogElement.close();
             }
             if (buttonId === 'remove') {
                 DataController.removeData(id).then(() => {
                     ControlsController.updateDataSwitcher();
                 });
+            }
+            if (buttonId === 'favorite') {
+                const favorites = tryParseLocalStorageJSON(SETTINGS_PREFIX + 'favorite-list', []);
+                const indexId = INDEX[id].id;
+                const favIndex = favorites.indexOf(indexId);
+                if (favIndex === -1) favorites.push(indexId);
+                else favorites.splice(favIndex, 1);
+                localStorage.setItem(SETTINGS_PREFIX + 'favorite-list', JSON.stringify(favorites));
+                ControlsController.updateDataSwitcher();
             }
         }
     },
@@ -2949,7 +3037,8 @@ const inputsInit = [
             closeAllCardInfoDialog();
             const fileInput = document.getElementById('upload-json-input');
             const file = fileInput.files[0];
-            if (file && file.type === 'application/json') importJsonFile(file);
+            if (!file) return;
+            if (file.type === 'application/json') importJsonFile(file);
         }
     },
     { id: 'render-engine', eventName: 'change',
@@ -3006,6 +3095,14 @@ function addNotify(text, duration = 2000) {
 // Basic functions
 
 
+function tryParseLocalStorageJSON(key, errorValue, fromSessionStorage = false) {
+    try {
+        return JSON.parse((fromSessionStorage ? sessionStorage : localStorage).getItem(key)) ?? errorValue;
+    } catch(_) {
+        return errorValue;
+    }
+}
+
 function createRegexSearch(filter, { caseInsensitive = false } = {}) {
     if (!filter) return { check: () => false, matchRegex: /(?:)/ };
 
@@ -3024,13 +3121,13 @@ function createRegexSearch(filter, { caseInsensitive = false } = {}) {
 function highlightMatches(text, matchRegex) {
     const fragment = new DocumentFragment();
     let lastIndex = 0;
-    
+
     text.replace(matchRegex, (match, offset) => {
         if (offset > lastIndex) insertTextNode(fragment, text.slice(lastIndex, offset));
         fragment.appendChild(createElement('mark', undefined, match));
         lastIndex = offset + match.length;
     });
-    
+
     if (lastIndex < text.length) insertTextNode(fragment, text.slice(lastIndex));
 
     return fragment;
@@ -3105,26 +3202,8 @@ function getPinchCenter(touch1, touch2) {
     };
 }
 
-function convertCanvasToImage(canvas) {
-    return new Promise(r => {
-        // const options = { type: 'image/png', quality: 1 };
-        const options = { type: 'image/jpeg', quality: .83 };
-        canvas.convertToBlob(options).then(blob => {
-            const image = new Image(canvas.width, canvas.height);
-            const url = URL.createObjectURL(blob);
-            image.addEventListener('load', () => {
-                URL.revokeObjectURL(url);
-                r(image);
-            }, { once: true });
-            image.src = url;
-        });
-    });
-};
-
 function smoothStepFactor(t) {
-    t = t < 0 ? 0 : t > 1 ? 1 : t // Clamp t to the range [0, 1]
-    t = t * t * (3 - 2 * t); // Ease-in-out function
-    return t;
+    return t * t * (3 - 2 * t); // Ease-in-out function
 }
 
 function fileToText(file) {
@@ -3136,13 +3215,49 @@ function fileToText(file) {
     });
 }
 
-function base64ToImage(base64) {
-    return new Promise(resolve => {
-        const image = new Image();
-        image.addEventListener('load', () => resolve(image), { once: true });
-        image.src = base64;
+function convertToImage(images) {
+    if (!Array.isArray(images)) images = [ images ];
+
+    return new Promise(async resolve => {
+        const count = images.length;
+        let converted = 0;
+        const onConverted = (i, image) => {
+            if (i !== undefined && image) {
+                image.onload = image.onerror = null;
+                images[i] = image.complete && image.naturalWidth ? image : null;
+            }
+
+            converted++;
+            ControlsController.loadingProgress = (converted/count) * 100;
+            if (converted >= count) resolve(count === 1 ? images[0] : images);
+        };
+
+        for (let i = 0; i < count; i++) {
+            const imageSource = images[i];
+
+            if (i % PAUSES_LONG_OPERATIONS_EVERY_N_OPERATIONS === 0) await giveBrowserTimeToRender();
+
+            if (imageSource instanceof Image) { // image
+                onConverted();
+            } else if (imageSource instanceof Blob) { // blob
+                const url = URL.createObjectURL(imageSource);
+                const image = new Image();
+                image.onload = image.onerror = () => {
+                    URL.revokeObjectURL(url);
+                    onConverted(i, image);
+                };
+                image.src = url;
+            } else if (typeof imageSource === 'string') { // base64
+                const image = new Image();
+                image.onload = image.onerror = () => onConverted(i, image);
+                image.src = imageSource;
+            } else { // unknown
+                onConverted();
+            }
+        }
+
     });
-}
+};
 
 function setAttributes(element, attributes) {
     if (attributes === undefined) return;
@@ -3180,6 +3295,10 @@ function clearSelection() {
     const selection = window.getSelection?.() ?? {};
     if (selection.empty) selection.empty();
     else if (selection.removeAllRanges) selection.removeAllRanges();
+}
+
+function giveBrowserTimeToRender() {
+    return new Promise(r => setTimeout(r, 0));
 }
 
 
@@ -3273,19 +3392,15 @@ function onMousedown(e) {
 }
 
 function onMousemove(e) {
-    const { clientX, clientY } = e.touches?.[0] ?? e;
+    const m = e.touches?.[0] ?? e;
 
     if (STATE.mousedown && STATE.ready) {
-        if (STATE.mouseX !== clientX || STATE.mouseY !== clientY) {
-            const controller = STATE.renderController;
-            const deltaX = clientX - STATE.mouseX;
-            const deltaY = clientY - STATE.mouseY;
+        if (STATE.mouseX !== m.clientX || STATE.mouseY !== m.clientY) {
+            STATE.velocityX = m.clientX - STATE.mouseX;
+            STATE.velocityY = m.clientY - STATE.mouseY;
             STATE.mousemove = true;
-            controller.panX += deltaX;
-            controller.panY += deltaY;
-
-            STATE.velocityX = deltaX;
-            STATE.velocityY = deltaY;
+            STATE.renderController.panX += STATE.velocityX;
+            STATE.renderController.panY += STATE.velocityY;
 
             draw();
         }
@@ -3300,8 +3415,8 @@ function onMousemove(e) {
             document.body.classList.toggle('alt-active', e.altKey);
         }
     }
-    STATE.mouseX = clientX;
-    STATE.mouseY = clientY;
+    STATE.mouseX = m.clientX;
+    STATE.mouseY = m.clientY;
 }
 
 function onMouseup(e) {
@@ -3465,11 +3580,11 @@ function onDrop(e) {
     const dt = e.dataTransfer;
     e.preventDefault();
 
-    const allowedTypes = ['application/json'];
+    const allowedTypes = [ 'application/json' ];
     const file = Array.from(dt.files).find(file => allowedTypes.includes(file.type));
     if (!file) return;
 
-    importJsonFile(file);
+    if (file.type === 'application/json') importJsonFile(file);
 }
 
 function onDragleave(e) {
@@ -3516,7 +3631,15 @@ if (ISLOCAL) {
     DataController.loadIndex().then(() => {
         const selectItemIndex = INDEX.findIndex(item => item.id === SELECTED_DATA_FROM_URL);
         ControlsController.updateDataSwitcher();
-        if (selectItemIndex !== -1) selectData(selectItemIndex);
+        if (selectItemIndex !== -1) {
+            try {
+                selectData(selectItemIndex);
+            } catch (error) {
+                console.error(error);
+                ControlsController.loadingEnd();
+                addNotify(`❌ Error loading data: ${error}`, 6000);
+            }
+        }
         else addNotify('Select embedding UMAP from list');
     });
 }

@@ -1,5 +1,17 @@
 [
     {
+        "id": "v1-chars-2048-mess-no-vec",
+        "title": "Characters (2048)",
+        "author": "epiTune",
+        "changed": "2025-01-02T10:00:00Z",
+        "type": "spaces",
+        "nodesCount": 2048,
+        "fileSize": 32953288,
+        "dataFormat": "epi-space-v1",
+        "tags": [  "Characters" ],
+        "url": "https://dangarte.github.io/epi-embedding-maps-viewer/data/v1-chars-2048-mess-no-vec.json"
+    },
+    {
         "id": "v1-color-schemes-4096-3x3",
         "title": "Color Schemes 3x3 (4096)",
         "author": "epiTune",

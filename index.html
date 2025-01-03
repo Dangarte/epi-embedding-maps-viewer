@@ -10,17 +10,22 @@
         <meta name="description" content="Tag Embedding Map Viewer"/>
         <link rel="icon" type="image/png" sizes="any" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABAAQMAAACQp+OdAAAABlBMVEUAAAD///+l2Z/dAAAAAXRSTlMAQObYZgAAAAFiS0dEAIgFHUgAAAAHdElNRQfoCxATKwPgE+Q7AAAAkklEQVQoz42RvRGAIAxG41lQOgKjOFoczVEYgZKC4zNIjKeeSo7iJeQ/RH0yrgouKEyxA5KCf4c5v0NR4AOAGwzAcgVXuLXoCyfN1xKNyB51Do8krxoQJ4jJAUGUQKItkikKSAhfQb/Eed2dLZzmmjDvJVIrQaxFzzassWfPz7nOkW0JH4v6WK+doOdedlw7959sOBF80xTKS+oAAAAASUVORK5CYII=">
         <link rel="stylesheet" href="style.css?v=19.12.24" type="text/css">
-        <script src="init.js?v=19.12.24" defer></script>
+        <script src="init.js?v=03.01.25" defer></script>
     </head>
     <body>
         <svg id="graph-svg" xmlns="http://www.w3.org/2000/svg"><g id="graph-container"></g></svg>
         <canvas id="image-canvas"></canvas>
         <div id="image-cards"><div id="cards-container"></div></div>
-    
+
         <div id="notify">
             <ul id="notify-list"></ul>
         </div>
-        
+
+        <div id="loading" style="display: none;">
+            <div id="loading-title">Loading...</div>
+            <div id="loading-bar"><div id="loading-bar-progress" style="width: 0%;"></div></div>
+        </div>
+
         <div id="controls" class="controls-group">
             <div class="control-item">
                 <input id="search" placeholder="Search..." autocomplete="off">
