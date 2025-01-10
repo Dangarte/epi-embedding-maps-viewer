@@ -1,5 +1,13 @@
 # Changelog
 
+## Update `03.01.25`
+
+- Ability to pin favorite cards to the top of the list
+- Now loading shows a progress bar
+- The list of changes has been moved to a separate file [changelog.md](https://github.com/Dangarte/epi-embedding-maps-viewer/tree/main/changelog.md) (this file)
+- Added error checking when loading the embedding map
+- New map have been uploaded
+
 ## Update `29.12.24`
 
 - Added map caching to IndexedDB

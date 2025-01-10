@@ -5,3 +5,4 @@ data/v1-chars-2048-mess.json
 convertImageToBase64webp.html
 convertJSONToMSGPACK.html
 lib/msgpack.min.js
+lib/jszip.min.js

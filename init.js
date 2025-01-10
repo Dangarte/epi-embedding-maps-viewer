@@ -1,5 +1,5 @@
 // Version info
-const VERSION = '03.01.25'; // Last modified date
+const VERSION = '10.01.25'; // Last modified date
 
 // Online info
 const HOST = 'https://dangarte.github.io/epi-embedding-maps-viewer';
@@ -46,7 +46,7 @@ function trySetSetting(settingKey, settingValue) {
 
 // IndexedDB info
 const DB_NAME = 'epi-embedding-maps-viewer';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 // Display options
 const PAGE_BACKGROUND = IS_DARK ? '#000' : '#eee';
@@ -162,6 +162,7 @@ const STATE = {
 
 
 // Controller classes
+
 
 class DataController {
     static supportedDataFormats = [ 'epi-space-v0', 'epi-space-v1', 'epi-graph-v1', 'dangart-v0' ];
@@ -529,8 +530,8 @@ class DataController {
     static getData(index) {
         return new Promise(async (resolve, reject) => {
             const { db, close } = await this.#connectDB();
-            const transaction = db.transaction('embedding-maps', "readonly");
-            const getRequest = transaction.objectStore('embedding-maps').index('id').get(INDEX[index].id);
+            const transaction = db.transaction('embedding-maps-data', "readonly");
+            const getRequest = transaction.objectStore('embedding-maps-data').index('id').get(INDEX[index].id);
             getRequest.onsuccess = e => resolve(e.target.result.data);
             getRequest.onerror = () => reject();
             transaction.oncomplete = () => close();
@@ -540,50 +541,52 @@ class DataController {
     static removeData(index) {
         return new Promise(async (resolve, reject) => {
             const { db, close } = await this.#connectDB();
-            const transaction = db.transaction('embedding-maps', "readwrite");
-            const store = transaction.objectStore('embedding-maps');
-            const getRequest = store.index('id').get(INDEX[index].id);
-            getRequest.onsuccess = () => {
-                if (!getRequest.result) return reject();
-                const deleteRequest = store.delete(getRequest.result.db_index);
-                deleteRequest.onsuccess = () => {
-                    INDEX[index].inIndexedDB = false;
-                    if (!INDEX[index].data) delete INDEX[index];
-                    resolve();
-                };
-                deleteRequest.onerror = () => reject();
+            const transaction = db.transaction(['embedding-maps-index', 'embedding-maps-data'], "readwrite");
+            const storeIndex = transaction.objectStore('embedding-maps-index');
+            const storeData = transaction.objectStore('embedding-maps-data');
+            const getIndexRequest = storeIndex.index('id').get(INDEX[index].id);
+            const getDataRequest = storeData.index('id').get(INDEX[index].id);
+            getIndexRequest.onsuccess = () => storeIndex.delete(getIndexRequest.result.db_index);
+            getDataRequest.onsuccess = () => storeData.delete(getDataRequest.result.db_index);
+            transaction.onerror = () => reject();
+            transaction.oncomplete = () => {
+                close();
+                delete INDEX[index];
+                resolve();
             };
-            getRequest.onerror = () => reject();
-            transaction.oncomplete = () => close();
         });
     }
 
-    static setData(data) {
+    static setData(indexItem) {
         return new Promise(async (resolve, reject) => {
+            if (!indexItem.data) return reject();
             const { db, close } = await this.#connectDB();
-            const transaction = db.transaction('embedding-maps', "readwrite");
-            const tableDB = transaction.objectStore('embedding-maps');
-            const addRequest = tableDB.add(data);
-            addRequest.onsuccess = () => resolve();
-            addRequest.onerror = () => reject();
-            transaction.oncomplete = () => close();
+            const transaction = db.transaction(['embedding-maps-index', 'embedding-maps-data'], "readwrite");
+            const storeIndex = transaction.objectStore('embedding-maps-index');
+            const storeData = transaction.objectStore('embedding-maps-data');
+            const itemData = { id: indexItem.id, data: indexItem.data };
+            delete indexItem.data;
+            storeIndex.add(indexItem);
+            storeData.add(itemData);
+            transaction.onerror = () => reject();
+            transaction.oncomplete = () => {
+                resolve();
+                close();
+            }
         });
     }
 
     static getIndexFromDB() {
-        // TODO: Splitting the data into 2 tables, otherwise loading ALL the data into memory every time the page is loaded doesn't seem very smart...
         return new Promise(async (resolve, reject) => {
             const { db, close } = await this.#connectDB();
-            const transaction = db.transaction('embedding-maps', "readonly");
-            const tableDB = transaction.objectStore('embedding-maps');
+            const transaction = db.transaction('embedding-maps-index', "readonly");
+            const tableDB = transaction.objectStore('embedding-maps-index');
             const request = tableDB.openCursor();
             const result = [];
             request.onsuccess = () => {
                 const cursor = request.result;
                 if (!cursor) return resolve(result);
-                const value = cursor.value;
-                delete value.data;
-                result.push(value);
+                result.push(cursor.value);
                 return cursor.continue();
             };
             request.onerror = () => reject();
@@ -593,24 +596,85 @@ class DataController {
 
     static #connectDB() {
         return new Promise((resolve, reject) => {
+            let isUpgradeNeeded = false;
             const openRequest = indexedDB.open(DB_NAME, DB_VERSION);
             openRequest.onsuccess = () => {
                 const db = openRequest.result;
                 const close = () => db.close();
                 resolve({ db, close });
-            };
-            openRequest.onerror = () => {
-                reject()
-            };
-            openRequest.onupgradeneeded = e => {
-                const db = openRequest.result;
-
-                switch (e.oldVersion) {
-                    case 0:
-                        const table = db.createObjectStore('embedding-maps', { keyPath: 'db_index', autoIncrement: true });
-                        table.createIndex('id', 'id', { unique: true });
+                if (isUpgradeNeeded) {
+                    ControlsController.loadingEnd();
+                    addNotify('✔ IndexedDB successfully upgraded');
                 }
             };
+            openRequest.onerror = error => {
+                console.error(error);
+                reject(error);
+                if (isUpgradeNeeded) {
+                    ControlsController.loadingEnd();
+                    addNotify('❌ Error upgrading IndexedDB');
+                } else addNotify('❌ Error opening IndexedDB');
+            };
+            openRequest.onupgradeneeded = e => {
+                isUpgradeNeeded = true;
+                ControlsController.loadingStart();
+                ControlsController.loadingTitle = `Upgrading Indexed DB from ${e.oldVersion} to ${DB_VERSION}`;
+                if (!e.oldVersion) return this.#createDB(e);
+                else return this.#upgradeDB(e);
+            };
+        });
+    }
+
+    static #createDB(event) {
+        const db = event.target.result;
+
+        const tableIndex = db.createObjectStore('embedding-maps-index', { keyPath: 'db_index', autoIncrement: true });
+        tableIndex.createIndex('id', 'id', { unique: true });
+        const tableData = db.createObjectStore('embedding-maps-data', { keyPath: 'db_index', autoIncrement: true });
+        tableData.createIndex('id', 'id', { unique: true });
+    }
+
+    static #upgradeDB(event) {
+        const db = event.target.result;
+
+        return new Promise(resolve => {
+            switch (event.oldVersion) {
+                case 0: {
+                    const table = db.createObjectStore('embedding-maps', { keyPath: 'db_index', autoIncrement: true });
+                    table.createIndex('id', 'id', { unique: true });
+                }
+
+                case 1: {
+                    // Split data into 2 tables
+                    const tableIndex = db.createObjectStore('embedding-maps-index', { keyPath: 'db_index', autoIncrement: true });
+                    tableIndex.createIndex('id', 'id', { unique: true });
+                    const tableData = db.createObjectStore('embedding-maps-data', { keyPath: 'db_index', autoIncrement: true });
+                    tableData.createIndex('id', 'id', { unique: true });
+
+                    const transaction = event.target.transaction;
+                    const oldStore = transaction.objectStore('embedding-maps');
+                    const storeIndex = transaction.objectStore('embedding-maps-index');
+                    const storeData = transaction.objectStore('embedding-maps-data');
+                    transaction.oncomplete = () => resolve();
+
+                    oldStore.openCursor().onsuccess = e => {
+                        const cursor = e.target.result;
+                        if (!cursor) {
+                            db.deleteObjectStore('embedding-maps');
+                            return;
+                        }
+                        const data = cursor.value;
+
+                        const newData = { id: data.id, data: data.data };
+                        delete data.data;
+
+                        storeIndex.add(data);
+                        storeData.add(newData);
+
+                        cursor.continue();
+                    };
+                }
+            }
         });
     }
 }
@@ -665,7 +729,7 @@ class ControlsController {
 
         if (INDEX.length) {
             const favoritesList = tryParseLocalStorageJSON(SETTINGS_PREFIX + 'favorite-list', []);
-            const favorites = Array.isArray(favoritesList) ? favoritesList.map(id => INDEX.findIndex(item => item.id === id)) : [];
+            const favorites = Array.isArray(favoritesList) ? favoritesList.map(id => INDEX.findIndex(item => item?.id === id)) : [];
             const order = [...favorites];
             INDEX.forEach((item, i) => !order.includes(i) ? order.push(i) : null);
             const fragment = new DocumentFragment();
@@ -1096,68 +1160,65 @@ class CardsPreviewController {
 class CardsPhysicController {
     data;
     points;
-    grid;
-    gridSizeX;
-    gridSizeY;
-    pointWidth;
-    pointHeight;
+    #grid;
+    cellSizeX;
+    cellSizeY;
+    pointSize;
 
     isActive = false;
 
-    constructor (data, pointWidth, pointHeight) {
+    #currentPointsCalcTime;
+    #lasPointsChangeTime;
+
+    constructor (data) {
         this.data = data;
-        this.pointWidth = pointWidth;
-        this.pointHeight = pointHeight;
+
+        let maxHeight = -Infinity, minHeight = Infinity, avgHeight = 0, maxWidth = -Infinity, minWidth = Infinity, avgWidth = 0;
+        data.forEach(item => {
+            if (item.width > maxWidth) maxWidth = item.width;
+            if (item.width < minWidth) minWidth = item.width;
+            if (item.height > maxHeight) maxHeight = item.height;
+            if (item.height < minHeight) minHeight = item.height;
+            avgWidth += item.width;
+            avgHeight += item.height;
+        });
+        avgWidth /= data.length;
+        avgHeight /= data.length;
+
+        this.pointSize = { maxHeight, minHeight, avgHeight, maxWidth, minWidth, avgWidth };
+
+        this.updatePoints();
     }
 
     updatePoints() {
-        const grid = this.grid = {};
-        const cellSizeX = this.gridSizeX = this.pointWidth;
-        const cellSizeY = this.gridSizeY = this.pointHeight;
-
-        this.points = this.data.map((p, i) => {
-            const gridX = Math.floor(p.x / cellSizeX);
-            const gridY = Math.floor(p.y / cellSizeY);
-
-            const gridCell = grid[gridX]?.[gridY] ?? this.#createCell(gridX, gridY);
-            gridCell.list.add(i);
-            return { x: p.x, y: p.y, i, width: p.width, height: p.height, gridX, gridY, gridCell };
-        });
+        this.#lasPointsChangeTime = Date.now();
     }
 
     async overlapFix() {
         if (!STATE.ready || this.isActive) return;
         this.isActive = true;
-        this.updatePoints();
         const spacing = STATE.spacing;
         const renderController = STATE.renderController;
 
-        const gap = 8; // Distance between cards
         const maxIterations = 80; // Maximum simulation steps
-        const minForce = 0.03; // Minimum force
 
         // This will decrease the repulsive force with each iteration 
         let forceScale = .5; // Default force multiplier
         const forceScaleMin = .3; // Minimum force multiplier
         const forceScaleStep = .01; // Step size at which to decrease force each iteration
-        const forceScaleResetAt = 8; // If for this amount of iteration, then set the value to 1
-        const forceScaleResetTo = .8; // Reset force multiplier to this value
+        const forceScaleResetAt = 12; // If for this amount of iteration, then set the value to `forceScaleResetTo`
+        const forceScaleResetTo = .72; // Reset force multiplier to this value
+        const minForce = .03; // Minimum repulsive force
 
-        const weightUp = 1.6; // If the direction is the same, then increase the shift
-        const weightDown = .4; // If the direction is opposite, then weaken the shift
-
-        const pointWidth = this.pointWidth;
-        const pointHeight = this.pointHeight;
-        const minDistance2 = pointWidth * pointWidth + pointHeight * pointHeight;
-        const minDistance = Math.sqrt(minDistance2) + gap;
+        const pointSize = this.pointSize;
+        const minDistance = Math.sqrt(pointSize.maxWidth * pointSize.maxWidth + pointSize.maxHeight * pointSize.maxHeight);
 
         const data = this.data;
-        const points = this.points;
         const grid = this.grid;
+        const points = this.points;
 
-        const cellSizeX = pointWidth;
-        const cellSizeY = pointHeight;
-
+        const cellSizeX = pointSize.maxWidth;
+        const cellSizeY = pointSize.maxHeight;
         const updateGrid = () => {
             this.points.forEach((p, i) => {
                 if (!p.changed) return;
@@ -1180,49 +1241,39 @@ class CardsPhysicController {
             let converged = true;
 
             points.forEach((p1, i) => {
-                const { x: x1, y: y1, dxLast: dx1Last = 0, dyLast: dy1Last = 0 } = p1;
+                const { x, y, x2, y2 } = p1;
 
-                p1.gridCell.neighbors.forEach(cell => {
-                    cell.list.forEach(j => {
-                        if (j <= i) return;
+                p1.gridCell.neighbors.forEach(cell => cell.list.forEach(j => {
+                    if (j <= i) return;
 
-                        const p2 = points[j];
-                        const dx = x1 - p2.x;
-                        const dy = y1 - p2.y;
+                    const p2 = points[j];
+                    if (p2.x > x2 || p2.y > y2 || p2.x2 < x || p2.y2 < y) return;
 
-                        const distance2 = dx * dx + dy * dy;
-                        if (distance2 < minDistance2) {
-                            const distance = Math.sqrt(distance2);
-                            const force = (minDistance - distance) / distance;
+                    const dx = x - p2.x;
+                    const dy = y - p2.y;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    const force = ((minDistance - distance) / distance) * forceScale; // TODO: Replace minDistance
 
-                            if (force > minForce) {
-                                converged = false;
+                    if (force > minForce) {
+                        converged = false;
 
-                                // Taking into account the direction of the last change
-                                const weight1 = (dx * dx1Last + dy * dy1Last) > 0 ? weightUp : weightDown;
-                                const weight2 = (-dx * (p2.dxLast ?? 0) - dy * (p2.dyLast ?? 0)) > 0 ? weightUp : weightDown;
+                        const fx = force * dx;
+                        const fy = force * dy;
 
-                                const fx = force * dx * forceScale;
-                                const fy = force * dy * forceScale;
+                        // Updating positions
+                        p1.x += fx;
+                        p1.y += fy;
+                        p1.x2 += fx;
+                        p1.y2 += fy;
+                        p1.changed = true;
 
-                                // Updating positions
-                                p1.x += fx * weight1;
-                                p1.y += fy * weight1;
-                                p2.x -= fx * weight2;
-                                p2.y -= fy * weight2;
-
-                                // Keep the last direction
-                                p1.dxLast = fx;
-                                p1.dyLast = fy;
-                                p2.dxLast = -fx;
-                                p2.dyLast = -fy;
-
-                                p1.changed = true;
-                                p2.changed = true;
-                            }
-                        }
-                    });
-                });
+                        p2.x -= fx;
+                        p2.y -= fy;
+                        p2.x2 -= fx;
+                        p2.y2 -= fy;
+                        p2.changed = true;
+                    }
+                }));
             });
 
             return converged;
@@ -1265,15 +1316,15 @@ class CardsPhysicController {
     }
 
     #createCell(gridX, gridY) {
-        if (!this.grid[gridX]) this.grid[gridX] = {};
-        const cell = this.grid[gridX][gridY] = { list: new Set(), neighbors: [] };
+        if (!this.#grid[gridX]) this.#grid[gridX] = {};
+        const cell = this.#grid[gridX][gridY] = { list: new Set(), neighbors: [] };
         this.#fillGridNeighbors(gridX, gridY, cell);
         return cell;
     }
 
     #fillGridNeighbors(gridX, gridY, cell) {
         for (let ox = -1; ox <= 1; ox++) {
-            const row = this.grid[gridX + ox];
+            const row = this.#grid[gridX + ox];
             if (!row) continue;
             for (let oy = -1; oy <= 1; oy++) {
                 const neighborCell = row[gridY + oy];
@@ -1283,6 +1334,31 @@ class CardsPhysicController {
                 }
             }
         }
+    }
+
+    #updatePoints() {
+        const gap = 8; // Add some padding to the size of the cards so that there are gaps between them
+        const grid = this.#grid = {};
+        const cellSizeX = this.cellSizeX = this.pointSize.maxWidth;
+        const cellSizeY = this.cellSizeY = this.pointSize.maxHeight;
+
+        this.points = this.data.map((p, i) => {
+            const gridX = Math.floor(p.x / cellSizeX);
+            const gridY = Math.floor(p.y / cellSizeY);
+
+            const gridCell = grid[gridX]?.[gridY] ?? this.#createCell(gridX, gridY);
+            gridCell.list.add(i);
+            return { x: p.x, y: p.y, i, x2: p.x + p.width + gap, y2: p.y + p.height + gap, width: p.width, height: p.height, gridX, gridY, gridCell };
+        });
+
+        this.#currentPointsCalcTime = this.#lasPointsChangeTime;
+
+        return grid;
+    }
+
+    get grid() {
+        if (this.#lasPointsChangeTime === this.#currentPointsCalcTime) return this.#grid;
+        else return this.#updatePoints();
     }
 }
 
@@ -1326,6 +1402,7 @@ class RenderController {
     #cardsNotMatched = [];
     #searchTimer = null;
     #positionChangeTime;
+    #filterChangeTime;
 
     #viewportWidth = 0;
     #viewportHeight = 0;
@@ -1735,6 +1812,7 @@ class RenderController {
 
     set filter(newFilter) {
         this.#filter = newFilter;
+        this.#filterChangeTime = Date.now();
         this.#search();
     }
 
@@ -1986,6 +2064,7 @@ class RenderController {
     #render_DOM() {
         const filter = this.#filter;
         const positionChangeTime = this.#positionChangeTime;
+        const filterChangeTime = this.#filterChangeTime;
         const cardsInViewport = this.#cardsInViewport;
 
         let isMatched = false;
@@ -2002,9 +2081,12 @@ class RenderController {
                 cardElement.style.top = `${d.y}px`;
                 cardElement.positionChangeTime = positionChangeTime;
             }
-            if (cardElement.filter !== filter) {
-                if (cardElement.matched !== isMatched) this.#r_DOM_toggleCardMatched(cardElement, isMatched);
-                this.#r_DOM_updateCardFilter(cardElement, filter);
+            if (cardElement.filterChangeTime !== filterChangeTime) {
+                if (cardElement.matched !== isMatched) {
+                    cardElement.element.classList.toggle('card-matched', isMatched);
+                    cardElement.matched = isMatched;
+                }
+                this.#r_DOM_updateCardFilter(cardElement);
             }
             if (!cardElement.inDOM) this.#r_DOM_appendCard(cardElement);
         };
@@ -2029,8 +2111,8 @@ class RenderController {
         return d.cardElement;
     }
 
-    #r_DOM_updateCardFilter(cardElement, filter) {
-        cardElement.filter = filter;
+    #r_DOM_updateCardFilter(cardElement) {
+        cardElement.filterChangeTime = this.#filterChangeTime;
 
         if (cardElement.matched) {
             const check = this.#filterCheckString;
@@ -2053,11 +2135,6 @@ class RenderController {
                 item.element.classList.toggle('related-tag-matched', false);
             });
         }
-    }
-
-    #r_DOM_toggleCardMatched(cardElement, isMatched) {
-        cardElement.element.classList.toggle('card-matched', isMatched);
-        cardElement.matched = isMatched;
     }
 
     #r_DOM_appendCard(cardElement) {
@@ -2175,12 +2252,13 @@ class RenderController {
 
     // TODO: Every frame transmitting the same texture coordinates... stupid, fix it
 
-    #r_WebGL2_program;
+    #r_WebGL2_program_main;
+    #r_WebGL2_program_outline;
     #r_WebGL2_textures;
 
     #render_WebG2L() {
         const gl = this.ctx;
-        const program = this.#r_WebGL2_program;
+        const mainProgram = this.#r_WebGL2_program_main;
         const cardsInViewport = this.#cardsInViewport;
 
         gl.clear(gl.COLOR_BUFFER_BIT);
@@ -2189,15 +2267,16 @@ class RenderController {
 
         this.cards.forEach(d => cardsInViewport[d.index] ? texturesToDraw[d.texLayer].cards.push(d) : null);
 
-        const panLocation = gl.getUniformLocation(program, 'u_pan');
-        const scaleLocation = gl.getUniformLocation(program, 'u_scale');
-        const positionLocation = gl.getAttribLocation(program, 'a_position');
-        const texCoordLocation = gl.getAttribLocation(program, 'a_texCoord');
-        const textureLocation = gl.getUniformLocation(program, 'u_texture');
-
-        gl.uniform2f(panLocation, this.#panX / CANVAS_WIDTH, this.#panY / CANVAS_HEIGHT);
-        gl.uniform1f(scaleLocation, this.#scale);
-
+        const prepareProgram = program => {
+            gl.useProgram(program);
+            gl.uniform2f(gl.getUniformLocation(program, 'u_pan'), this.#panX / CANVAS_WIDTH, this.#panY / CANVAS_HEIGHT);
+            gl.uniform1f(gl.getUniformLocation(program, 'u_scale'), this.#scale);
+            return {
+                positionLocation: gl.getAttribLocation(program, 'a_position'),
+                texCoordLocation: gl.getAttribLocation(program, 'a_texCoord'),
+                textureLocation: gl.getUniformLocation(program, 'u_texture')
+            };
+        };
         const createBuffer = (location, bufferArray) => {
             const buffer = gl.createBuffer();
             gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
@@ -2208,6 +2287,9 @@ class RenderController {
 
             return buffer;
         };
+
+        // Draw cards
+        const { positionLocation, texCoordLocation, textureLocation } = prepareProgram(mainProgram);
 
         const drawFromTexture = (texture, texCoords, positions) => {
             const positionBuffer = createBuffer(positionLocation, positions);
@@ -2235,6 +2317,13 @@ class RenderController {
             });
             drawFromTexture(layer.texture, texCoords, positions);
         });
+
+        // if (this.#cardsMatched.length) {
+        //     const outlinesToDraw = [];
+        //     this.#cardsMatched.forEach(d => cardsInViewport[d.index] ? outlinesToDraw.push(d) : null);
+        //     // TODO
+        //     console.log(outlinesToDraw);
+        // }
     }
 
     #r_WebGL2_init() {
@@ -2287,7 +2376,7 @@ class RenderController {
 
         //
 
-        const vertexShaderSource = `#version 300 es
+        const mainVertexShaderSource = `#version 300 es
         precision lowp float;
 
         in vec2 a_position;
@@ -2304,7 +2393,7 @@ class RenderController {
         }
         `;
 
-        const fragmentShaderSource = `#version 300 es
+        const mainFragmentShaderSource = `#version 300 es
         precision lowp float;
 
         in vec2 v_texCoord;
@@ -2317,11 +2406,21 @@ class RenderController {
         }
         `;
 
-        const vertexShader = this.#r_WebGL2_createShader(gl.VERTEX_SHADER, vertexShaderSource);
-        const fragmentShader = this.#r_WebGL2_createShader(gl.FRAGMENT_SHADER, fragmentShaderSource);
+        const outlineFragmentShaderSource = `#version 300 es
+        precision lowp float;
 
-        this.#r_WebGL2_program = this.#r_WebGL2_createProgram(vertexShader, fragmentShader);
-        gl.useProgram(this.#r_WebGL2_program);
+        uniform vec4 u_borderColor;
+        uniform float u_borderWidth;
+        uniform float u_cornerRadius;
+
+        out vec4 fragColor;
+
+        void main() {
+        }
+        `;
+
+        this.#r_WebGL2_program_main = this.#r_WebGL2_createProgram(mainVertexShaderSource, mainFragmentShaderSource);
+        // this.#r_WebGL2_program_outline = this.#r_WebGL2_createProgram(mainVertexShaderSource, outlineFragmentShaderSource);
     }
 
     #r_WebGL2_destroy() {
@@ -2359,11 +2458,11 @@ class RenderController {
         return shader;
     }
 
-    #r_WebGL2_createProgram(vertexShader, fragmentShader) {
+    #r_WebGL2_createProgram(vertexShaderSource, fragmentShaderSource) {
         const gl = this.ctx;
         const program = gl.createProgram();
-        gl.attachShader(program, vertexShader);
-        gl.attachShader(program, fragmentShader);
+        gl.attachShader(program, this.#r_WebGL2_createShader(gl.VERTEX_SHADER, vertexShaderSource));
+        gl.attachShader(program, this.#r_WebGL2_createShader(gl.FRAGMENT_SHADER, fragmentShaderSource));
         gl.linkProgram(program);
         return program;
     }
@@ -2397,10 +2496,6 @@ async function selectData(id) {
     await setLoadingStatus('Unloading data');
     STATE.renderController?.destroy?.();
     STATE.previewControllers = {};
-    const keysToClear = [...CARD_PREVIEW_SCALING.map(i => i.id), 'cardElement', 'index' ];
-    STATE.data.forEach(d => keysToClear.forEach(key => d[key] !== undefined ? delete d[key] : null));
-    delete STATE.maxCardWidth;
-    delete STATE.maxCardHeight;
     cardsContainer.textContent = '';
     cardsContainer.removeAttribute('style');
     graphContainer.textContent = '';
@@ -2408,8 +2503,7 @@ async function selectData(id) {
 
     // Load data from file
     await setLoadingStatus(INDEX[id].fileSize ? `Loading data (${filesizeToString(INDEX[id].fileSize)})` : 'Loading data');
-    const data = INDEX[id].data ?? DataController.normalizeData(INDEX[id].inIndexedDB ? await DataController.getData(id) : await DataController.fetchData(id));
-    if (!INDEX[id].data) INDEX[id].data = data;
+    const data = DataController.normalizeData(INDEX[id].inIndexedDB ? await DataController.getData(id) : await DataController.fetchData(id));
     STATE.source = data;
     STATE.data = data.nodes;
     console.log(`${loaderPrefix} %c${key}%c: `, cCode, '', data);
@@ -2455,9 +2549,7 @@ async function selectData(id) {
     }
 
     // Create physics controller
-    STATE.maxCardWidth = STATE.renderController.cardSize.maxWidth;
-    STATE.maxCardHeight = STATE.renderController.cardSize.maxHeight;
-    STATE.physics = new CardsPhysicController(STATE.data, STATE.maxCardWidth, STATE.maxCardHeight);
+    STATE.physics = new CardsPhysicController(STATE.data);
 
     await setLoadingStatus('Calculating the position of the cards');
     selectSpace(STATE.data, STATE.space);
@@ -2466,6 +2558,7 @@ async function selectData(id) {
 
     await setLoadingStatus('Initializing the render controller');
     await STATE.renderController.init();
+    STATE.renderController.filter = ControlsController.searchInputElement.value;
 
     console.timeEnd(loadingStatus);
     ControlsController.loadingEnd();
@@ -2621,7 +2714,7 @@ async function importJsonFile(file) {
             dataType = DataController.getDataType(data);
 
             dataIndex = INDEX.length;
-            const indexItem = { id: key, title: file.name.replace(/\.json$/, ''), type: dataType, data: data, description: `Imported from file "${file.name}"`, fileSize: file.size, nodesCount: data.nodes.length, changed: Date.now(), imported: true };
+            const indexItem = { id: key, title: file.name.replace(/\.json$/, ''), type: dataType, inIndexedDB: true, description: `Imported from file "${file.name}"`, fileSize: file.size, nodesCount: data.nodes.length, changed: Date.now(), imported: true };
             INDEX.push(indexItem);
             await DataController.dataImported(dataIndex, json);
         } catch (error) {
@@ -2656,7 +2749,7 @@ function sortByProximity(points) {
     points.forEach(p => relativePoints[p.index] = p);
     const pointsIndexes = new Set(points.map(d => d.index));;
     const visited = new Set();
-    const { grid: referenceGrid, pointWidth: cellSizeX, pointHeight: cellSizeY } = STATE.physics;
+    const { grid: referenceGrid, cellSizeX, cellSizeY } = STATE.physics;
 
     const grid = {};
     const gridSizes = {};
@@ -2691,9 +2784,11 @@ function sortByProximity(points) {
     const checkCell = (x, y) => {
         grid[x]?.[y]?.forEach(i => {
             const point = relativePoints[i];
-            const dist = (target.x - point.x) ** 2 + (target.y - point.y) ** 2;
-            if (dist < minDistance) {
-                minDistance = dist;
+            const dx = target.x - point.x;
+            const dy = target.y - point.y;
+            const distance = dx * dx + dy * dy;
+            if (distance < minDistance) {
+                minDistance = distance;
                 nearestIndex = i;
             }
         });
@@ -2897,7 +2992,7 @@ const inputsInit = [
                 spacingAnimationFrame = null;
                 if (STATE.ready) {
                     selectSpace(STATE.data, STATE.space);
-                    STATE.renderController.coordinatesChanged();
+                    // STATE.renderController.coordinatesChanged(); // There is already a call to change position inside selectSpace
                     STATE.renderController.render(true);
                     STATE.renderController.renderGraph();
                 }
@@ -2916,7 +3011,7 @@ const inputsInit = [
     { id: 'search', eventName: 'input',
         callback: () => {
             closeAllCardInfoDialog();
-            STATE.renderController.filter = ControlsController.searchInputElement.value.trim().toLowerCase();
+            STATE.renderController.filter = ControlsController.searchInputElement.value;
             draw();
         }
     },
@@ -3221,12 +3316,7 @@ function convertToImage(images) {
     return new Promise(async resolve => {
         const count = images.length;
         let converted = 0;
-        const onConverted = (i, image) => {
-            if (i !== undefined && image) {
-                image.onload = image.onerror = null;
-                images[i] = image.complete && image.naturalWidth ? image : null;
-            }
-
+        const onConverted = () => {
             converted++;
             ControlsController.loadingProgress = (converted/count) * 100;
             if (converted >= count) resolve(count === 1 ? images[0] : images);
@@ -3237,23 +3327,27 @@ function convertToImage(images) {
 
             if (i % PAUSES_LONG_OPERATIONS_EVERY_N_OPERATIONS === 0) await giveBrowserTimeToRender();
 
-            if (imageSource instanceof Image) { // image
-                onConverted();
-            } else if (imageSource instanceof Blob) { // blob
-                const url = URL.createObjectURL(imageSource);
-                const image = new Image();
-                image.onload = image.onerror = () => {
-                    URL.revokeObjectURL(url);
-                    onConverted(i, image);
-                };
-                image.src = url;
-            } else if (typeof imageSource === 'string') { // base64
-                const image = new Image();
-                image.onload = image.onerror = () => onConverted(i, image);
-                image.src = imageSource;
-            } else { // unknown
-                onConverted();
-            }
+            if (imageSource) {
+                if (imageSource instanceof Blob) {
+                    const url = URL.createObjectURL(imageSource);
+                    const image = new Image();
+                    image.onload = image.onerror = () => {
+                        URL.revokeObjectURL(url);
+                        image.onload = image.onerror = null;
+                        images[i] = image.complete && image.naturalWidth ? image : null;
+                        onConverted();
+                    };
+                    image.src = url;
+                } else if (typeof imageSource === 'string') {
+                    const image = new Image();
+                    image.onload = image.onerror = () => {
+                        image.onload = image.onerror = null;
+                        images[i] = image.complete && image.naturalWidth ? image : null;
+                        onConverted();
+                    };
+                    image.src = imageSource;
+                } else onConverted();
+            } else onConverted();
         }
 
     });
@@ -3435,11 +3529,11 @@ function onMouseup(e) {
                 const { clientX, clientY } = e.touches?.[0] ?? e;
                 const globalX = (clientX - panX) / scale;
                 const globalY = (clientY - panY) / scale;
-                const { data, grid, gridSizeX, gridSizeY } = STATE.physics;
+                const { data, grid, cellSizeX, cellSizeY } = STATE.physics;
 
                 const cells = [];
-                const cellX = Math.floor(globalX / gridSizeX);
-                const cellY = Math.floor(globalY / gridSizeY);
+                const cellX = Math.floor(globalX / cellSizeX);
+                const cellY = Math.floor(globalY / cellSizeY);
                 for(let dx = -1; dx <= 1; dx++) {
                     for(let dy = -1; dy <= 1; dy++) {
                         const cell = grid[cellX + dx]?.[cellY + dy];

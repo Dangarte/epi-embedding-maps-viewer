@@ -7,7 +7,7 @@ The main reason for creating this page was the desire to have a less laggy inter
 
 Creator of the original maps — [epiTune](https://civitai.com/user/epiTune).
 
-Last update: **`03.01.25`**
+Last update: **`10.01.25`**
 
 ## How to use?
 
@@ -73,14 +73,22 @@ In spaces you can:
 4. Holding `Alt` (cards) — Possibility to select text in the title
 5. `Shift + Click` — Activate a button in reverse, if possible (e.g., a button to navigate to the previous search result)
 
+## Useful Information
+
+### Render Engine
+
+You can select the rendering method for displaying cards:
+
+1. **HTML Element**: Very slow.
+2. **Canvas 2D**: Faster than HTML Element but slower than Canvas WebGL2.
+3. **Canvas WebGL2**: Extremely fast.  
+   - Uses VRAM even if hardware acceleration is disabled in the browser, so if this is critical, it's better to choose Canvas 2D.
+
 ## Changelog
 
-### Update `03.01.25`
+### Update `10.01.25`
 
-- Ability to pin favorite cards to the top of the list
-- Now loading shows a progress bar
-- The list of changes has been moved to a separate file [changelog.md](https://github.com/Dangarte/epi-embedding-maps-viewer/tree/main/changelog.md)
-- Added error checking when loading the embedding map
-- New map have been uploaded
+- Improved overlap fix
+- Now map data is stored separately from their meta information required for display in the list (The data list loads faster when opening the page)
 
 [changelog.md](https://github.com/Dangarte/epi-embedding-maps-viewer/tree/main/changelog.md)
